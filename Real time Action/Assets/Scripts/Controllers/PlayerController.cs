@@ -1,17 +1,24 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
 
+enum PlayerState
+{
+    Idle,
+    Move,
+    Attack,
+    Dodge,
+    Hit
+}
 public class PlayerController : MonoBehaviour
 {
     private CharacterController controller;
+
     [Header("Move")]
     private float moveSpeed = 6f;
     private Vector2 moveInput;
 
     [Header("State")]
-    public bool isAttacking;
-    public bool isDodging;
-    public bool isHit;
+    private PlayerState currentState;
 
     [Header("Attack Combo")]
     private int attackCount = 0;
@@ -30,12 +37,27 @@ public class PlayerController : MonoBehaviour
 
     void Start()
     {
-        
+
     }
 
     void Update()
     {
-        HandleMove();
+        switch (currentState)
+        {
+            case PlayerState.Idle:
+            case PlayerState.Move:
+                HandleMove();
+                break;
+
+            case PlayerState.Attack:
+                break;
+
+            case PlayerState.Dodge:
+                break;
+
+            case PlayerState.Hit:
+                break;
+        }
         HandleComboTimer();
     }
 
@@ -43,7 +65,7 @@ public class PlayerController : MonoBehaviour
 
     void HandleMove()
     {
-        if (isAttacking || isDodging || isHit) return;
+        if (currentState != PlayerState.Idle) return;
 
         Vector3 move = new Vector3(moveInput.x, 0, moveInput.y);
 
@@ -52,6 +74,7 @@ public class PlayerController : MonoBehaviour
 
         controller.Move(move * moveSpeed * Time.deltaTime);
     }
+
     void HandleGravity()
     {
         if (controller.isGrounded)
@@ -68,6 +91,12 @@ public class PlayerController : MonoBehaviour
     #endregion
 
     #region Input
+    void ChangeState(PlayerState newState)
+    {
+        Debug.Log($"State: {currentState} -> {newState}");
+        currentState = newState;
+    }
+
     public void OnMove(InputValue value)
     {
         moveInput = value.Get<Vector2>();
@@ -75,23 +104,20 @@ public class PlayerController : MonoBehaviour
 
     public void OnAttack(InputValue value) // 임시
     {
-        if (isDodging || isHit) return;
+        if (currentState != PlayerState.Idle && currentState != PlayerState.Move)
+            return;
 
-        if (!isAttacking)
+        ChangeState(PlayerState.Attack);
+
+        attackCount = 1;
+        Debug.Log("1타");
+        Invoke(nameof(EndAction), 0.5f);
+
+        if (comboTimer > 0)
         {
-            isAttacking = true;
-            attackCount = 1;
-            Debug.Log("1타");
-            Invoke(nameof(EndAttack), 0.5f);
-        }
-        else
-        {
-            if (comboTimer > 0)
-            {
-                attackCount++;
-                Debug.Log(attackCount + "타");
-                if (attackCount > 3) return;
-            }
+            attackCount++;
+            Debug.Log(attackCount + "타");
+            if (attackCount > 4) return;
         }
 
         comboTimer = comboResetTime;
@@ -108,25 +134,17 @@ public class PlayerController : MonoBehaviour
         }
     }
 
-    void EndAttack()
-    {
-        isAttacking = false;
-    }
-
     public void OnDodge(InputValue value) // 임시
     {
-        if (isAttacking || isHit || isDodging) return;
+        if (currentState != PlayerState.Idle && currentState != PlayerState.Move) return;
 
-        isDodging = true;
+        ChangeState(PlayerState.Dodge);
+
         Debug.Log("회피!");
 
-        Invoke(nameof(EndDodge), 0.3f); 
+        Invoke(nameof(EndAction), 0.3f);
     }
 
-    void EndDodge()
-    {
-        isDodging = false;
-    }
     public void OnHitTest(InputValue value)
     {
         TakeHit();
@@ -134,17 +152,17 @@ public class PlayerController : MonoBehaviour
 
     void TakeHit()
     {
-        if (isHit) return;
+        if (currentState == PlayerState.Hit) return;
 
-        isHit = true;
+        ChangeState(PlayerState.Hit) ;
         Debug.Log("피격!!!");
 
-        Invoke(nameof(EndHit), 0.4f);
+        Invoke(nameof(EndAction), 0.4f);
     }
 
-    void EndHit()
+    void EndAction()
     {
-        isHit = false;
+        ChangeState(PlayerState.Idle);
     }
     #endregion
 }
