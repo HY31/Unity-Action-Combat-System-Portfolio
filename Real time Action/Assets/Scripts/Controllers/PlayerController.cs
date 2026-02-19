@@ -11,11 +11,12 @@ public class PlayerController : MonoBehaviour
     [Header("State")]
     public bool isAttacking;
     public bool isDodging;
+    public bool isHit;
 
     [Header("Attack Combo")]
     private int attackCount = 0;
     private float comboTimer;
-    public float comboResetTime = 1f;
+    public float comboResetTime = 2f;
 
     [Header("Gravity")]
     private float yVelocity;
@@ -42,7 +43,7 @@ public class PlayerController : MonoBehaviour
 
     void HandleMove()
     {
-        if (isAttacking || isDodging) return;
+        if (isAttacking || isDodging || isHit) return;
 
         Vector3 move = new Vector3(moveInput.x, 0, moveInput.y);
 
@@ -74,7 +75,7 @@ public class PlayerController : MonoBehaviour
 
     public void OnAttack(InputValue value) // 임시
     {
-        if (isDodging) return;
+        if (isDodging || isHit) return;
 
         if (!isAttacking)
         {
@@ -114,8 +115,7 @@ public class PlayerController : MonoBehaviour
 
     public void OnDodge(InputValue value) // 임시
     {
-        if (isAttacking) return;
-        if (isDodging) return;
+        if (isAttacking || isHit || isDodging) return;
 
         isDodging = true;
         Debug.Log("회피!");
@@ -126,6 +126,25 @@ public class PlayerController : MonoBehaviour
     void EndDodge()
     {
         isDodging = false;
+    }
+    public void OnHitTest(InputValue value)
+    {
+        TakeHit();
+    }
+
+    void TakeHit()
+    {
+        if (isHit) return;
+
+        isHit = true;
+        Debug.Log("피격!!!");
+
+        Invoke(nameof(EndHit), 0.4f);
+    }
+
+    void EndHit()
+    {
+        isHit = false;
     }
     #endregion
 }
