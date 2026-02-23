@@ -1,10 +1,11 @@
+using System;
+using Unity.VisualScripting;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
 enum PlayerState
 {
     Idle,
-    Move,
     Attack,
     Dodge,
     Hit
@@ -45,7 +46,6 @@ public class PlayerController : MonoBehaviour
         switch (currentState)
         {
             case PlayerState.Idle:
-            case PlayerState.Move:
                 HandleMove();
                 break;
 
@@ -90,13 +90,63 @@ public class PlayerController : MonoBehaviour
 
     #endregion
 
-    #region Input
+    #region State
     void ChangeState(PlayerState newState)
     {
+        if (currentState == newState)
+            return;
+
+        ExitState(currentState);
+
         Debug.Log($"State: {currentState} -> {newState}");
         currentState = newState;
+
+        EnterState(newState);
     }
 
+    private void EnterState(PlayerState state)
+    {
+        switch (state)
+        {
+            case PlayerState.Idle:
+                break;
+
+            case PlayerState.Attack:
+                attackCount = 1;
+                Debug.Log("1타");
+                Invoke(nameof(EndAttack), 0.5f);
+                break;
+
+            case PlayerState.Dodge:
+                Debug.Log("회피!");
+                Invoke(nameof(EndDodge), 0.3f);
+                break;
+
+            case PlayerState.Hit:
+                Debug.Log("피격!!!");
+                Invoke(nameof(EndHit), 0.4f);
+                break;
+        }
+    }
+
+    private void ExitState(PlayerState state)
+    {
+        switch (state)
+        {
+            case PlayerState.Attack:
+                CancelInvoke(nameof(EndAttack));
+                break;
+            case PlayerState.Dodge:
+                CancelInvoke(nameof(EndDodge));
+                break;
+            case PlayerState.Hit:
+                CancelInvoke(nameof(EndHit));
+                break;
+        }
+    }
+    #endregion
+
+    #region Input
     public void OnMove(InputValue value)
     {
         moveInput = value.Get<Vector2>();
@@ -104,23 +154,10 @@ public class PlayerController : MonoBehaviour
 
     public void OnAttack(InputValue value) // 임시
     {
-        if (currentState != PlayerState.Idle && currentState != PlayerState.Move)
+        if (currentState != PlayerState.Idle)
             return;
 
         ChangeState(PlayerState.Attack);
-
-        attackCount = 1;
-        Debug.Log("1타");
-        Invoke(nameof(EndAction), 0.5f);
-
-        if (comboTimer > 0)
-        {
-            attackCount++;
-            Debug.Log(attackCount + "타");
-            if (attackCount > 4) return;
-        }
-
-        comboTimer = comboResetTime;
     }
     void HandleComboTimer()
     {
@@ -136,13 +173,10 @@ public class PlayerController : MonoBehaviour
 
     public void OnDodge(InputValue value) // 임시
     {
-        if (currentState != PlayerState.Idle && currentState != PlayerState.Move) return;
+        if (currentState != PlayerState.Idle)
+            return;
 
         ChangeState(PlayerState.Dodge);
-
-        Debug.Log("회피!");
-
-        Invoke(nameof(EndAction), 0.3f);
     }
 
     public void OnHitTest(InputValue value)
@@ -152,15 +186,20 @@ public class PlayerController : MonoBehaviour
 
     void TakeHit()
     {
-        if (currentState == PlayerState.Hit) return;
-
-        ChangeState(PlayerState.Hit) ;
-        Debug.Log("피격!!!");
-
-        Invoke(nameof(EndAction), 0.4f);
+        ChangeState(PlayerState.Hit);
     }
 
-    void EndAction()
+    void EndAttack()
+    {
+        ChangeState(PlayerState.Idle);
+    }
+
+    void EndDodge()
+    {
+        ChangeState(PlayerState.Idle);
+    }
+
+    void EndHit()
     {
         ChangeState(PlayerState.Idle);
     }
