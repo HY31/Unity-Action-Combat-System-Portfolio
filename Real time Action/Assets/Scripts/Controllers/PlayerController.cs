@@ -3,79 +3,63 @@ using Unity.VisualScripting;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
-enum PlayerState
-{
-    Idle,
-    Attack,
-    Dodge,
-    Hit
-}
 public class PlayerController : MonoBehaviour
 {
     private CharacterController controller;
+    public CharacterController Controller => controller;
 
     [Header("Move")]
     private float moveSpeed = 6f;
-    private Vector2 moveInput;
-
-    [Header("State")]
-    private PlayerState currentState;
-
-    [Header("Attack Combo")]
-    private int attackCount = 0;
-    private float comboTimer;
-    public float comboResetTime = 2f;
+    public Vector2 MoveInput { get; private set; }
+    public float MoveSpeed => moveSpeed;
 
     [Header("Gravity")]
     private float yVelocity;
+    public float YVelocity => yVelocity;
+
     public float gravity = -9.81f;
     public float groundedGravity = -2f;
+
+    [Header("State")]
+    private IPlayerState currentState;
+    
+    // 상태 인스턴스 캐싱
+    public IdleState IdleState { get; private set; }
+    public AttackState AttackState { get; private set; }
+    public DodgeState DodgeState { get; private set; }
+    public HitState HitState { get; private set; }
+
+    //[Header("Attack Combo")]
+    //private int attackCount = 0;
+    //private float comboTimer;
+    //public float comboResetTime = 2f;
+
+    [Header("Dodge")]
+    private float dodgeSpeed = 2f;
+    public float DodgeSpeed => dodgeSpeed;
+    
 
     private void Awake()
     {
         controller = GetComponent<CharacterController>();
+
+        IdleState = new IdleState(this);
+        AttackState = new AttackState(this);
+        DodgeState = new DodgeState(this);
+        HitState = new HitState(this);
     }
 
     void Start()
     {
-
+        ChangeState(IdleState);
     }
 
     void Update()
     {
-        switch (currentState)
-        {
-            case PlayerState.Idle:
-                HandleMove();
-                break;
-
-            case PlayerState.Attack:
-                break;
-
-            case PlayerState.Dodge:
-                break;
-
-            case PlayerState.Hit:
-                break;
-        }
-        HandleComboTimer();
+        currentState?.Update();
     }
 
-    #region Movement
-
-    void HandleMove()
-    {
-        if (currentState != PlayerState.Idle) return;
-
-        Vector3 move = new Vector3(moveInput.x, 0, moveInput.y);
-
-        HandleGravity();
-        move.y = yVelocity;
-
-        controller.Move(move * moveSpeed * Time.deltaTime);
-    }
-
-    void HandleGravity()
+    public void HandleGravity()
     {
         if (controller.isGrounded)
         {
@@ -88,95 +72,29 @@ public class PlayerController : MonoBehaviour
         }
     }
 
-    #endregion
-
-    #region State
-    void ChangeState(PlayerState newState)
+    public void ChangeState(IPlayerState newState)
     {
-        if (currentState == newState)
-            return;
+        if (currentState == newState) return;
 
-        ExitState(currentState);
-
-        Debug.Log($"State: {currentState} -> {newState}");
+        currentState?.Exit();
         currentState = newState;
-
-        EnterState(newState);
+        Debug.Log($"Current state = {currentState}");
+        currentState.Enter();
     }
-
-    private void EnterState(PlayerState state)
-    {
-        switch (state)
-        {
-            case PlayerState.Idle:
-                break;
-
-            case PlayerState.Attack:
-                attackCount = 1;
-                Debug.Log("1타");
-                Invoke(nameof(EndAttack), 0.5f);
-                break;
-
-            case PlayerState.Dodge:
-                Debug.Log("회피!");
-                Invoke(nameof(EndDodge), 0.3f);
-                break;
-
-            case PlayerState.Hit:
-                Debug.Log("피격!!!");
-                Invoke(nameof(EndHit), 0.4f);
-                break;
-        }
-    }
-
-    private void ExitState(PlayerState state)
-    {
-        switch (state)
-        {
-            case PlayerState.Attack:
-                CancelInvoke(nameof(EndAttack));
-                break;
-            case PlayerState.Dodge:
-                CancelInvoke(nameof(EndDodge));
-                break;
-            case PlayerState.Hit:
-                CancelInvoke(nameof(EndHit));
-                break;
-        }
-    }
-    #endregion
-
     #region Input
     public void OnMove(InputValue value)
     {
-        moveInput = value.Get<Vector2>();
+        MoveInput = value.Get<Vector2>();
     }
 
     public void OnAttack(InputValue value) // 임시
     {
-        if (currentState != PlayerState.Idle)
-            return;
-
-        ChangeState(PlayerState.Attack);
-    }
-    void HandleComboTimer()
-    {
-        if (comboTimer > 0)
-        {
-            comboTimer -= Time.deltaTime;
-        }
-        else
-        {
-            attackCount = 0;
-        }
+        ChangeState(AttackState);
     }
 
     public void OnDodge(InputValue value) // 임시
     {
-        if (currentState != PlayerState.Idle)
-            return;
-
-        ChangeState(PlayerState.Dodge);
+        ChangeState(DodgeState);
     }
 
     public void OnHitTest(InputValue value)
@@ -186,22 +104,22 @@ public class PlayerController : MonoBehaviour
 
     void TakeHit()
     {
-        ChangeState(PlayerState.Hit);
+        ChangeState(HitState);
     }
 
     void EndAttack()
     {
-        ChangeState(PlayerState.Idle);
+        ChangeState(IdleState);
     }
 
     void EndDodge()
     {
-        ChangeState(PlayerState.Idle);
+        ChangeState(IdleState);
     }
 
     void EndHit()
     {
-        ChangeState(PlayerState.Idle);
+        ChangeState(IdleState);
     }
     #endregion
 }
