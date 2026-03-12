@@ -30,4 +30,19 @@ public class HitState : IPlayerState
     {
         Debug.Log("Hit Exit");
     }
+
+    public void HandleAttack()
+    {
+        // player.ChangeState(player.AttackState);
+    }
+
+    public void HandleDodge()
+    {
+        // player.ChangeState(player.DodgeState);
+    }
+
+    public void HandleHit()
+    {
+        // player.ChangeState(player.HitState);
+    }
 }

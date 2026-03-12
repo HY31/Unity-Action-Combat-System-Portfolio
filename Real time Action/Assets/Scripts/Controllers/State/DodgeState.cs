@@ -7,6 +7,8 @@ public class DodgeState : IPlayerState
     private float timer;
     private Vector3 dodgeDirection;
 
+    private float dodgeCount = 2;
+
     public DodgeState(PlayerController player)
     {
         this.player = player;
@@ -34,5 +36,21 @@ public class DodgeState : IPlayerState
     public void Exit()
     {
         Debug.Log("Dodge Exit");
+    }
+
+    public void HandleAttack()
+    {
+        // 회피 반격
+    }
+
+    public void HandleDodge()
+    {
+        // 연속 회피(회피 카운트 추가해서 넣기(기본 2회)
+        
+    }
+
+    public void HandleHit()
+    {
+        player.ChangeState(player.HitState);
     }
 }

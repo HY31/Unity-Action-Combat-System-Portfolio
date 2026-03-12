@@ -29,19 +29,21 @@ public class PlayerController : MonoBehaviour
     public DodgeState DodgeState { get; private set; }
     public HitState HitState { get; private set; }
 
-    //[Header("Attack Combo")]
-    //private int attackCount = 0;
-    //private float comboTimer;
-    //public float comboResetTime = 2f;
+    [Header("Attack Combo")]
+    public AttackData[] normalCombo;
 
     [Header("Dodge")]
     private float dodgeSpeed = 2f;
     public float DodgeSpeed => dodgeSpeed;
+
+    [Header("Animate")]
+    public Animator Animator { get; private set; }
     
 
     private void Awake()
     {
         controller = GetComponent<CharacterController>();
+        Animator = GetComponent<Animator>();
 
         IdleState = new IdleState(this);
         AttackState = new AttackState(this);
@@ -89,37 +91,31 @@ public class PlayerController : MonoBehaviour
 
     public void OnAttack(InputValue value) // 임시
     {
-        ChangeState(AttackState);
+        if(value.isPressed)
+        {
+            currentState?.HandleAttack();
+        }
     }
 
     public void OnDodge(InputValue value) // 임시
     {
-        ChangeState(DodgeState);
+        if (value.isPressed)
+        {
+            currentState?.HandleDodge();
+        }
     }
 
     public void OnHitTest(InputValue value)
     {
-        TakeHit();
+        if (value.isPressed)
+        {
+            currentState?.HandleHit();
+        }
     }
 
     void TakeHit()
     {
         ChangeState(HitState);
-    }
-
-    void EndAttack()
-    {
-        ChangeState(IdleState);
-    }
-
-    void EndDodge()
-    {
-        ChangeState(IdleState);
-    }
-
-    void EndHit()
-    {
-        ChangeState(IdleState);
     }
     #endregion
 }

@@ -14,6 +14,7 @@ public class IdleState : IPlayerState
     public void Enter()
     {
         Debug.Log("Idle Enter");
+        player.Animator.CrossFade("Idle", 0.1f);
     }
 
     public void Update()
@@ -31,5 +32,19 @@ public class IdleState : IPlayerState
     public void Exit()
     {
         Debug.Log("Idle Exit");
+    }
+    public void HandleAttack()
+    {
+        player.ChangeState(player.AttackState);
+    }
+
+    public void HandleDodge()
+    {
+        player.ChangeState(player.DodgeState);
+    }
+
+    public void HandleHit()
+    {
+        player.ChangeState(player.HitState);
     }
 }
