@@ -24,30 +24,30 @@ public class AttackState : IPlayerState
 
     public void Update()
     {
-        var info = player.Animator.GetCurrentAnimatorStateInfo(0);
+        //var info = player.Animator.GetCurrentAnimatorStateInfo(0);
 
-        if (!info.IsName(currentAttack.animationName))
-            return;
+        //if (!info.IsName(currentAttack.animationName))
+        //    return;
 
-        float t = info.normalizedTime;
+        //float t = info.normalizedTime;
 
-        // 공격 판정 구간
-        if (t >= currentAttack.startUpEnd && t < currentAttack.activeEnd)
-        {
-            OnAttackActive();
-        }
+        //// 공격 판정 구간
+        //if (t >= currentAttack.startUpEnd && t < currentAttack.activeEnd)
+        //{
+        //    OnAttackActive();
+        //}
 
-        // 콤보 입력 처리
-        if (t >= currentAttack.activeEnd)
-        {
-            TryCombo();
-        }
+        //// 콤보 입력 처리
+        //if (t >= currentAttack.activeEnd)
+        //{
+        //    TryCombo();
+        //}
 
-        // 애니 끝
-        if (t >= 1f)
-        {
-            player.ChangeState(player.IdleState);
-        }
+        //// 애니 끝
+        //if (t >= 1f)
+        //{
+        //    player.ChangeState(player.LocomotionState);
+        //}
     }
 
     private void TryCombo()
