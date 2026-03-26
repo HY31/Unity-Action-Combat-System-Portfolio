@@ -2,34 +2,41 @@ using UnityEngine;
 
 public class ThirdPersonCamera : MonoBehaviour
 {
-    public Transform player;
-    public Transform pivot;
+    [SerializeField] private Transform followTarget; // CameraFollowTarget
+    [SerializeField] private Transform pivot;
 
-    public float mouseSensitivity = 300f;
+    [SerializeField] private float mouseSensitivity = 300f;
+    [SerializeField] private float followSmooth = 15f;
 
-    float yaw;
-    float pitch;
+    private float yaw;
+    private float pitch;
 
-    void Start()
+    private void Start()
     {
-        Cursor.lockState = CursorLockMode.Locked;
+        Cursor.lockState = CursorLockMode.Locked; 
     }
 
-    void Update()
+    private void Update()
     {
         float mouseX = Input.GetAxis("Mouse X") * mouseSensitivity * Time.deltaTime;
         float mouseY = Input.GetAxis("Mouse Y") * mouseSensitivity * Time.deltaTime;
 
         yaw += mouseX;
         pitch -= mouseY;
-
         pitch = Mathf.Clamp(pitch, -30f, 60f);
 
-        pivot.rotation = Quaternion.Euler(pitch, yaw, 0f);
+        transform.rotation = Quaternion.Euler(0f, yaw, 0f);
+        pivot.localRotation = Quaternion.Euler(pitch, 0f, 0f);
     }
 
-    void LateUpdate()
+    private void LateUpdate()
     {
-        transform.position = player.position;
+        if (followTarget == null) return;
+
+        transform.position = Vector3.Lerp(
+            transform.position,
+            followTarget.position,
+            followSmooth * Time.deltaTime
+        );
     }
 }
