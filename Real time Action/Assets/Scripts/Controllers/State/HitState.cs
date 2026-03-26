@@ -23,7 +23,7 @@ public class HitState : IPlayerState
 
         if (timer <= 0f)
         {
-            player.ChangeState(player.IdleState);
+            player.ChangeState(player.LocomotionState);
         }
     }
     public void Exit()

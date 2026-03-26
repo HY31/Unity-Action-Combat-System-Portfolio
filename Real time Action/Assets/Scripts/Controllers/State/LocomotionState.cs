@@ -1,10 +1,16 @@
-using UnityEditor;
 using UnityEngine;
-using UnityEngine.Rendering;
 
 public class LocomotionState : IPlayerState
 {
-    PlayerController player;
+    private readonly PlayerController player;
+    private string currentAnim;
+
+    private const string IDLE = "Avatar_Female_Size02_EllenOnCampus_Ani_Idle_Loop";
+    private const string WALK_START = "Avatar_Female_Size02_EllenOnCampus_Ani_Walk_Start";
+    private const string WALK_LOOP = "Avatar_Female_Size02_EllenOnCampus_Ani_Walk_Loop";
+    private const string WALK_END = "Avatar_Female_Size02_EllenOnCampus_Ani_Walk_End";
+    private const string RUN_LOOP = "Avatar_Female_Size02_EllenOnCampus_Ani_Run_Loop";
+    private const string RUN_END = "Avatar_Female_Size02_EllenOnCampus_Ani_Run_End";
 
     public LocomotionState(PlayerController player)
     {
@@ -13,32 +19,33 @@ public class LocomotionState : IPlayerState
 
     public void Enter()
     {
-        Debug.Log("Locomotion Enter");
-        player.Animator.CrossFade("Avatar_Female_Size02_EllenOnCampus_Ani_Idle_Loop", 0.1f);
+        PlayAnimation(IDLE, 0.1f);
     }
 
     public void Update()
     {
-        Vector3 move = player.GetCameraRelativeMoveDirection();
+        Vector3 moveDir = player.GetCameraRelativeMoveDirection();
+        bool hasInput = player.MoveInput.sqrMagnitude > 0.0001f;
 
-        player.RotateToward(move);
+        player.UpdateSpeed(hasInput);
 
-        player.UpdateSpeed(move.magnitude > 0.1f);
+        if (hasInput)
+            player.RotateToward(moveDir);
+
+        Vector3 move = moveDir * player.CurrentSpeed;
 
         player.HandleGravity();
         move.y = player.YVelocity;
 
-        player.Controller.Move(move * player.CurrentSpeed * Time.deltaTime);
+        player.Controller.Move(move * Time.deltaTime);
 
-        player.Animator.SetFloat("MoveSpeed", player.CurrentSpeed);
-
-        player.Animator.CrossFade("Avatar_Female_Size02_EllenOnCampus_Ani_Idle_Loop", 0.1f);
+        UpdateAnimation(hasInput);
     }
 
     public void Exit()
     {
-        Debug.Log("Locomotion Exit");
     }
+
     public void HandleAttack()
     {
         player.ChangeState(player.AttackState);
@@ -52,5 +59,77 @@ public class LocomotionState : IPlayerState
     public void HandleHit()
     {
         player.ChangeState(player.HitState);
+    }
+
+    private void UpdateAnimation(bool hasInput)
+    {
+        AnimatorStateInfo info = player.Animator.GetCurrentAnimatorStateInfo(0);
+
+        if (!hasInput)
+        {
+            if (currentAnim == WALK_START)
+            {
+                if (info.normalizedTime >= 0.95f)
+                    PlayAnimation(WALK_END, 0.08f);
+                return;
+            }
+
+            if (currentAnim == WALK_LOOP)
+            {
+                PlayAnimation(WALK_END, 0.08f);
+                return;
+            }
+
+            if (currentAnim == RUN_LOOP)
+            {
+                PlayAnimation(RUN_END, 0.08f);
+                return;
+            }
+
+            if (currentAnim == WALK_END)
+            {
+                if (info.normalizedTime >= 0.95f)
+                    PlayAnimation(IDLE, 0.08f);
+                return;
+            }
+
+            if (currentAnim != IDLE)
+                PlayAnimation(IDLE, 0.08f);
+
+            return;
+        }
+
+        // 입력 있음
+        if (currentAnim == IDLE || currentAnim == WALK_END)
+        {
+            PlayAnimation(WALK_START, 0.08f);
+            return;
+        }
+
+        if (currentAnim == WALK_START)
+        {
+            if (info.normalizedTime >= 0.95f)
+            {
+                if (player.CurrentSpeed >= player.RunThreshold)
+                    PlayAnimation(RUN_LOOP, 0.08f);
+                else
+                    PlayAnimation(WALK_LOOP, 0.08f);
+            }
+            return;
+        }
+
+        if (player.CurrentSpeed >= player.RunThreshold)
+            PlayAnimation(RUN_LOOP, 0.1f);
+        else
+            PlayAnimation(WALK_LOOP, 0.1f);
+    }
+
+    private void PlayAnimation(string animationName, float fadeTime)
+    {
+        if (currentAnim == animationName)
+            return;
+
+        currentAnim = animationName;
+        player.Animator.CrossFade(animationName, fadeTime);
     }
 }

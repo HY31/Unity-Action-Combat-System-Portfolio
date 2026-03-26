@@ -24,30 +24,37 @@ public class AttackState : IPlayerState
 
     public void Update()
     {
-        //var info = player.Animator.GetCurrentAnimatorStateInfo(0);
+        var info = player.Animator.GetCurrentAnimatorStateInfo(0);
 
-        //if (!info.IsName(currentAttack.animationName))
-        //    return;
+        if (!info.IsName(currentAttack.animationName))
+            return;
 
-        //float t = info.normalizedTime;
+        float t = info.normalizedTime;
 
-        //// 공격 판정 구간
-        //if (t >= currentAttack.startUpEnd && t < currentAttack.activeEnd)
-        //{
-        //    OnAttackActive();
-        //}
+        // 전진 이동
+        if (t >= currentAttack.moveStart && t <= currentAttack.moveEnd)
+        {
+            Vector3 forward = player.transform.forward;
+            player.Controller.Move(forward * currentAttack.forwardMoveSpeed * Time.deltaTime);
+        }
 
-        //// 콤보 입력 처리
-        //if (t >= currentAttack.activeEnd)
-        //{
-        //    TryCombo();
-        //}
+        // 공격 판정
+        if (t >= currentAttack.startUpEnd && t < currentAttack.activeEnd)
+        {
+            OnAttackActive();
+        }
 
-        //// 애니 끝
-        //if (t >= 1f)
-        //{
-        //    player.ChangeState(player.LocomotionState);
-        //}
+        // 콤보 입력
+        if (t >= currentAttack.activeEnd)
+        {
+            TryCombo();
+        }
+
+        // 종료
+        if (t >= 1f)
+        {
+            player.ChangeState(player.LocomotionState);
+        }
     }
 
     private void TryCombo()
