@@ -2,21 +2,44 @@ using UnityEngine;
 
 public class HitBox : MonoBehaviour
 {
+    private Collider hitCollider;
     private bool active;
+
+    [SerializeField] private Transform ownerRoot;
+
+    private void Awake()
+    {
+        hitCollider = GetComponent<Collider>();
+        SetActive(false);
+    }
 
     public void SetActive(bool value)
     {
         active = value;
-        gameObject.SetActive(value);
+
+        if (hitCollider != null)
+            hitCollider.enabled = value;
     }
 
     private void OnTriggerEnter(Collider other)
     {
         if (!active) return;
 
-        if (other.CompareTag("Enemy"))
-        {
-            Debug.Log("적 맞음!");
-        }
+        Debug.Log(other);
+
+        HurtBox hurtBox = other.GetComponent<HurtBox>();
+        Debug.Log($"hurtBox = {hurtBox}");
+
+        if (hurtBox == null)
+            hurtBox = other.GetComponentInParent<HurtBox>();
+
+        if (hurtBox == null)
+            return;
+
+        if (ownerRoot != null && hurtBox.OwnerRoot == ownerRoot)
+            return;
+
+        Debug.Log("적 맞음!");
+        hurtBox.TakeHit();
     }
 }
