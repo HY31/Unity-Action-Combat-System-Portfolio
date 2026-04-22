@@ -1,4 +1,5 @@
 using UnityEngine;
+using DG.Tweening;
 
 public class ThirdPersonCameraController : MonoBehaviour
 {
@@ -33,6 +34,8 @@ public class ThirdPersonCameraController : MonoBehaviour
     private float pitch;
     private float targetDistance;
     private float currentDistance;
+
+    private Tween shakeTween;
 
     private void Awake()
     {
@@ -149,5 +152,21 @@ public class ThirdPersonCameraController : MonoBehaviour
         Vector3 right = yawPivot.right;
         right.y = 0f;
         return right.normalized;
+    }
+
+    public void Shake(float duration = 0.12f, float strength = 0.08f, int vibrato = 18)
+    {
+        if (pitchPivot == null) return;
+
+        shakeTween?.Kill();
+
+        pitchPivot.localPosition = Vector3.zero;
+
+        shakeTween = pitchPivot.DOShakePosition(duration, strength, vibrato)
+            .SetUpdate(true)
+            .OnComplete(() =>
+            {
+                pitchPivot.localPosition = Vector3.zero;
+            });
     }
 }

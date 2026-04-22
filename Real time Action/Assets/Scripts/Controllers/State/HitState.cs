@@ -45,4 +45,9 @@ public class HitState : IPlayerState
     {
         // player.ChangeState(player.HitState);
     }
+
+    public void HandleSkill()
+    {
+        // player.ChangeState(player.SkillState);
+    }
 }

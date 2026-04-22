@@ -22,6 +22,10 @@ public class AttackState : IPlayerState
     private bool hitboxActive;
     private HitBox hitBox;
 
+    private Transform assistTarget;
+    private Vector3 attackAssistDirection;
+    private bool hasAttackAssist;
+
     public AttackState(PlayerController player)
     {
         this.player = player;
@@ -33,6 +37,7 @@ public class AttackState : IPlayerState
         bufferedAttackInput = false;
         bufferedAttackTimer = 0f;
         hitboxActive = false;
+        ClearAttackAssist();
 
         if (hitBox == null)
         {
@@ -65,6 +70,7 @@ public class AttackState : IPlayerState
         bufferedAttackInput = false;
         bufferedAttackTimer = 0f;
         hitboxActive = false;
+        ClearAttackAssist();
     }
 
     public void HandleAttack()
@@ -83,12 +89,19 @@ public class AttackState : IPlayerState
         player.ChangeState(player.HitState);
     }
 
+    public void HandleSkill()
+    {
+        // 실제 젠존제에서는 공격중에 스킬 누르면 바로 스킬 나감
+        // player.ChangeState(player.SkillState);
+    }
+
     private void StartAttack(AttackData attackData)
     {
         currentAttack = attackData;
         phase = AttackPhase.Attack;
 
         SetHitBoxActive(false);
+        ResolveAttackAssist();
 
         player.Animator.CrossFade(currentAttack.attackAnim, 0.05f);
         Debug.Log($"Start Attack: {currentAttack.attackAnim}");
@@ -101,25 +114,28 @@ public class AttackState : IPlayerState
 
         float t = info.normalizedTime;
 
-        // 공격 중 전진 이동
+        UpdateAttackAssist(t);
+
+        // Drive the attack forward using the assisted direction when a target exists.
         if (t >= currentAttack.moveStart && t <= currentAttack.moveEnd)
         {
-            Vector3 forwardMove = player.transform.forward * currentAttack.forwardMoveSpeed;
+            Vector3 moveDirection = ResolveAttackMoveDirection();
+            Vector3 forwardMove = moveDirection * currentAttack.forwardMoveSpeed;
             player.Controller.Move(forwardMove * Time.deltaTime);
         }
 
-        // 공격 판정 활성화
+        // Sync hitbox timing with the active frames.
         bool shouldHitBoxBeActive = t >= currentAttack.startUpEnd && t < currentAttack.activeEnd;
         Debug.Log($"shouldHitBoxBeActive = {shouldHitBoxBeActive}");
         SetHitBoxActive(shouldHitBoxBeActive);
 
-        // 콤보 입력 처리
+        // Preserve the existing combo buffer timing.
         if (t >= currentAttack.comboInputOpenTime)
         {
             TryChainCombo();
         }
 
-        // 공격 애니메이션 종료 -> End로 이동
+        // Transition to the end animation after the attack clip finishes.
         if (t >= 1f)
         {
             SetHitBoxActive(false);
@@ -179,7 +195,71 @@ public class AttackState : IPlayerState
             return;
 
         hitboxActive = active;
-        Debug.Log($"hitboxActive = {hitboxActive}");
+        Debug.Log($"skillHitboxActive = {hitboxActive}");
         hitBox.SetActive(active);
+    }
+
+    private void ResolveAttackAssist()
+    {
+        ClearAttackAssist();
+
+        if (!currentAttack.useAutoAim)
+            return;
+
+        assistTarget = player.FindAttackTarget(
+            currentAttack.autoAimRadius,
+            currentAttack.autoAimMaxAngle);
+
+        if (assistTarget == null)
+            return;
+
+        attackAssistDirection = player.GetAttackAssistDirection(assistTarget);
+
+        if (attackAssistDirection.sqrMagnitude < 0.0001f)
+        {
+            ClearAttackAssist();
+            return;
+        }
+
+        hasAttackAssist = true;
+        player.RotateToward(attackAssistDirection, currentAttack.autoAimRotationMultiplier);
+    }
+
+    private void UpdateAttackAssist(float normalizedTime)
+    {
+        if (!hasAttackAssist)
+            return;
+
+        if (assistTarget == null)
+        {
+            ClearAttackAssist();
+            return;
+        }
+
+        Vector3 direction = player.GetAttackAssistDirection(assistTarget);
+
+        if (direction.sqrMagnitude > 0.0001f)
+            attackAssistDirection = direction;
+
+        if (normalizedTime <= currentAttack.autoAimRotateUntil)
+            player.RotateToward(attackAssistDirection, currentAttack.autoAimRotationMultiplier);
+    }
+
+    private Vector3 ResolveAttackMoveDirection()
+    {
+        if (!currentAttack.steerMoveToTarget || !hasAttackAssist)
+            return player.transform.forward;
+
+        if (attackAssistDirection.sqrMagnitude < 0.0001f)
+            return player.transform.forward;
+
+        return attackAssistDirection;
+    }
+
+    private void ClearAttackAssist()
+    {
+        assistTarget = null;
+        attackAssistDirection = Vector3.zero;
+        hasAttackAssist = false;
     }
 }

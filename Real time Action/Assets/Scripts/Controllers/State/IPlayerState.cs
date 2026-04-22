@@ -9,4 +9,5 @@ public interface IPlayerState
     void HandleAttack();
     void HandleDodge();
     void HandleHit();
+    void HandleSkill();
 }

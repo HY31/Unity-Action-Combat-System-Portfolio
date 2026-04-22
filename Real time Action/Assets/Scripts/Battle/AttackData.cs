@@ -19,4 +19,12 @@ public class AttackData : ScriptableObject
     public float forwardMoveSpeed = 3f;
     [Range(0, 1)] public float moveStart = 0.1f;
     [Range(0, 1)] public float moveEnd = 0.4f;
+
+    [Header("Auto Aim")]
+    public bool useAutoAim = true;
+    [Min(0f)] public float autoAimRadius = 4f;
+    [Range(0f, 180f)] public float autoAimMaxAngle = 70f;
+    [Min(0f)] public float autoAimRotationMultiplier = 2f;
+    [Range(0f, 1f)] public float autoAimRotateUntil = 0.2f;
+    public bool steerMoveToTarget = true;
 }

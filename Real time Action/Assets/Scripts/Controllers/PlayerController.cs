@@ -39,9 +39,24 @@ public class PlayerController : MonoBehaviour
     public AttackState AttackState { get; private set; }
     public DodgeState DodgeState { get; private set; }
     public HitState HitState { get; private set; }
+    public SkillState SkillState { get; private set; }
 
     [Header("Attack Combo")]
     public AttackData[] normalCombo;
+
+    [Header("Attack Assist")]
+    [SerializeField] private LayerMask attackTargetMask = ~0;
+
+    [Header("Skill")]
+    [SerializeField] private float maxEnergy = 100f;
+    [SerializeField] private float currentEnergy = 20f;
+    [SerializeField] private float energyRecoveryRate = 1.2f;
+    public float MaxEnergy => maxEnergy;
+    public float CurrentEnergy => currentEnergy;
+    public float EnergyRecoveryRate => energyRecoveryRate;
+
+    [Header("SkillCombo")]
+    public SkillData[] skillCombo;
 
     [Header("Dodge")]
     [SerializeField] private float dodgeSpeed = 8f;
@@ -59,6 +74,7 @@ public class PlayerController : MonoBehaviour
         AttackState = new AttackState(this);
         DodgeState = new DodgeState(this);
         HitState = new HitState(this);
+        SkillState = new SkillState(this);
     }
 
     private void Start()
@@ -127,17 +143,128 @@ public class PlayerController : MonoBehaviour
         return moveDir;
     }
 
-    public void RotateToward(Vector3 moveDirection)
+    public void RotateToward(Vector3 moveDirection, float rotationMultiplier = 1f)
     {
         if (moveDirection.sqrMagnitude < 0.0001f)
             return;
 
         Quaternion targetRotation = Quaternion.LookRotation(moveDirection);
+        float turnSpeed = rotationSpeed * Mathf.Max(0f, rotationMultiplier);
+
         transform.rotation = Quaternion.Slerp(
             transform.rotation,
             targetRotation,
-            rotationSpeed * Time.deltaTime
+            turnSpeed * Time.deltaTime
         );
+    }
+
+    public Transform FindAttackTarget(float radius, float maxAngle)
+    {
+        Vector3 origin = transform.position;
+        Vector3 referenceForward = cameraYawPivot != null ? cameraYawPivot.forward : transform.forward;
+        Vector3 playerForward = transform.forward;
+
+        referenceForward.y = 0f;
+        playerForward.y = 0f;
+
+        if (referenceForward.sqrMagnitude < 0.0001f)
+            referenceForward = transform.forward;
+
+        if (playerForward.sqrMagnitude < 0.0001f)
+            playerForward = transform.forward;
+
+        referenceForward.Normalize();
+        playerForward.Normalize();
+
+        Collider[] hits = Physics.OverlapSphere(
+            origin,
+            radius,
+            attackTargetMask,
+            QueryTriggerInteraction.Collide);
+
+        Transform selfRoot = transform.root;
+        Transform bestTarget = null;
+        float bestScore = float.MaxValue;
+
+        foreach (Collider hit in hits)
+        {
+            HurtBox hurtBox = hit.GetComponent<HurtBox>();
+
+            if (hurtBox == null)
+                hurtBox = hit.GetComponentInParent<HurtBox>();
+
+            if (hurtBox == null)
+                continue;
+
+            Transform targetRoot = hurtBox.OwnerRoot != null ? hurtBox.OwnerRoot : hurtBox.transform.root;
+
+            if (targetRoot == null || targetRoot == selfRoot)
+                continue;
+
+            Vector3 toTarget = targetRoot.position - origin;
+            toTarget.y = 0f;
+
+            float sqrDistance = toTarget.sqrMagnitude;
+
+            if (sqrDistance < 0.0001f)
+                continue;
+
+            float distance = Mathf.Sqrt(sqrDistance);
+            Vector3 direction = toTarget / distance;
+
+            float cameraAngle = Vector3.Angle(referenceForward, direction);
+
+            if (cameraAngle > maxAngle)
+                continue;
+
+            float playerAngle = Vector3.Angle(playerForward, direction);
+            float score = cameraAngle + (playerAngle * 0.35f) + (distance * 6f);
+
+            if (Vector3.Dot(playerForward, direction) < 0f)
+                score += 15f;
+
+            if (score >= bestScore)
+                continue;
+
+            bestScore = score;
+            bestTarget = targetRoot;
+        }
+
+        return bestTarget;
+    }
+
+    public Vector3 GetAttackAssistDirection(Transform target)
+    {
+        if (target == null)
+            return Vector3.zero;
+
+        Vector3 direction = target.position - transform.position;
+        direction.y = 0f;
+
+        if (direction.sqrMagnitude < 0.0001f)
+            return Vector3.zero;
+
+        return direction.normalized;
+    }
+
+    public void GainEnergy(float amount)
+    {
+        currentEnergy = Mathf.Clamp(currentEnergy + amount, 0f, maxEnergy);
+    }
+
+    public void RecoveryEnergyOverTime(float recoveryPerSecond)
+    {
+        currentEnergy = Mathf.Clamp(currentEnergy + recoveryPerSecond * Time.deltaTime, 0f, maxEnergy); 
+    }
+
+    public bool TryUseEnergy(float needEnergy)
+    {
+        if(currentEnergy >= needEnergy)
+        {
+            currentEnergy -= needEnergy;
+            return true;
+        }
+        else return false;
     }
 
     public void SetCurrentSpeed(float speed)
@@ -167,6 +294,12 @@ public class PlayerController : MonoBehaviour
     {
         if (value.isPressed)
             currentState?.HandleHit();
+    }
+
+    public void OnSkill(InputValue value)
+    {
+        if (value.isPressed)
+            currentState?.HandleSkill();
     }
     #endregion
 }

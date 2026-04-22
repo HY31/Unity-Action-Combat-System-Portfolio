@@ -24,6 +24,9 @@ public class LocomotionState : IPlayerState
 
     public void Update()
     {
+        // 임시로 Locomotion State에서만 에너지 자동회복
+        player.RecoveryEnergyOverTime(player.EnergyRecoveryRate);
+
         Vector3 moveDir = player.GetCameraRelativeMoveDirection();
         bool hasInput = player.MoveInput.sqrMagnitude > 0.0001f;
 
@@ -59,6 +62,11 @@ public class LocomotionState : IPlayerState
     public void HandleHit()
     {
         player.ChangeState(player.HitState);
+    }
+
+    public void HandleSkill()
+    {
+        player.ChangeState(player.SkillState);
     }
 
     private void UpdateAnimation(bool hasInput)

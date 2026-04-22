@@ -6,11 +6,14 @@ public class HitBox : MonoBehaviour
     private bool active;
 
     [SerializeField] private Transform ownerRoot;
+    private ThirdPersonCameraController camController;
 
     private void Awake()
     {
         hitCollider = GetComponent<Collider>();
         SetActive(false);
+
+        camController = Camera.main.GetComponentInParent<ThirdPersonCameraController>();
     }
 
     public void SetActive(bool value)
@@ -39,7 +42,10 @@ public class HitBox : MonoBehaviour
         if (ownerRoot != null && hurtBox.OwnerRoot == ownerRoot)
             return;
 
-        Debug.Log("¿˚ ∏¬¿Ω!");
+        Debug.Log("Í≥µÍ≤© Ï†ÅÏ§ë!");
+        camController?.Shake();
+
         hurtBox.TakeHit();
+        HitStop.DoHitStop(0.05f);
     }
 }

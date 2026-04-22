@@ -1,4 +1,5 @@
 using UnityEngine;
+using DG.Tweening;
 
 public class ThirdPersonCamera : MonoBehaviour
 {
@@ -38,5 +39,11 @@ public class ThirdPersonCamera : MonoBehaviour
             followTarget.position,
             followSmooth * Time.deltaTime
         );
+    }
+
+    public void Shake(float duration = 0.15f, float strength = 0.2f)
+    {
+        pivot.DOShakePosition(duration, strength)
+             .SetUpdate(true);
     }
 }
