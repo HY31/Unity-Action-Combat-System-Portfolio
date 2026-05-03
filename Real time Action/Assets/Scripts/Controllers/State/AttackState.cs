@@ -1,4 +1,4 @@
-using UnityEngine;
+ï»¿using UnityEngine;
 
 public class AttackState : IPlayerState
 {
@@ -73,6 +73,7 @@ public class AttackState : IPlayerState
         ClearAttackAssist();
     }
 
+    #region Handle
     public void HandleAttack()
     {
         bufferedAttackInput = true;
@@ -91,15 +92,21 @@ public class AttackState : IPlayerState
 
     public void HandleSkill()
     {
-        // ½ÇÁ¦ Á¨Á¸Á¦¿¡¼­´Â °ø°İÁß¿¡ ½ºÅ³ ´©¸£¸é ¹Ù·Î ½ºÅ³ ³ª°¨
+        // ì‹¤ì œ ì  ì¡´ì œì—ì„œëŠ” ê³µê²©ì¤‘ì— ìŠ¤í‚¬ ëˆ„ë¥´ë©´ ë°”ë¡œ ìŠ¤í‚¬ ë‚˜ê°
         // player.ChangeState(player.SkillState);
     }
+    public void HandleUltimate()
+    {
+        // player.ChangeState(player.UltimateState);
+    }
+    #endregion
 
     private void StartAttack(AttackData attackData)
     {
         currentAttack = attackData;
         phase = AttackPhase.Attack;
 
+        hitBox.SetRewardType(DecibelRewardType.NormalAttack);
         SetHitBoxActive(false);
         ResolveAttackAssist();
 
@@ -263,3 +270,5 @@ public class AttackState : IPlayerState
         hasAttackAssist = false;
     }
 }
+
+

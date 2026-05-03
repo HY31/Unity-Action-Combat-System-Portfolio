@@ -1,4 +1,4 @@
-using UnityEngine;
+ï»¿using UnityEngine;
 
 public class LocomotionState : IPlayerState
 {
@@ -24,7 +24,7 @@ public class LocomotionState : IPlayerState
 
     public void Update()
     {
-        // ÀÓ½Ã·Î Locomotion State¿¡¼­¸¸ ¿¡³ÊÁö ÀÚµ¿È¸º¹
+        // ì„ì‹œë¡œ Locomotion Stateì—ì„œë§Œ ì—ë„ˆì§€ ìë™íšŒë³µ
         player.RecoveryEnergyOverTime(player.EnergyRecoveryRate);
 
         Vector3 moveDir = player.GetCameraRelativeMoveDirection();
@@ -49,6 +49,7 @@ public class LocomotionState : IPlayerState
     {
     }
 
+    #region Handle
     public void HandleAttack()
     {
         player.ChangeState(player.AttackState);
@@ -68,6 +69,12 @@ public class LocomotionState : IPlayerState
     {
         player.ChangeState(player.SkillState);
     }
+    public void HandleUltimate()
+    {
+        if (!player.CanUseUltimate) return;
+        player.ChangeState(player.UltimateState);
+    }
+    #endregion
 
     private void UpdateAnimation(bool hasInput)
     {
@@ -107,7 +114,7 @@ public class LocomotionState : IPlayerState
             return;
         }
 
-        // ÀÔ·Â ÀÖÀ½
+        // ì…ë ¥ ìˆìŒ
         if (currentAnim == IDLE || currentAnim == WALK_END)
         {
             PlayAnimation(WALK_START, 0.08f);
@@ -141,3 +148,5 @@ public class LocomotionState : IPlayerState
         player.Animator.CrossFade(animationName, fadeTime);
     }
 }
+
+

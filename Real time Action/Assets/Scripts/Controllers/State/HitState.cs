@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 
 public class HitState : IPlayerState
 {
@@ -19,7 +19,7 @@ public class HitState : IPlayerState
     public void Update()
     {
         timer -= Time.deltaTime;
-        Debug.Log("�ǰ�!!!");
+        Debug.Log("피격!!!");
 
         if (timer <= 0f)
         {
@@ -31,6 +31,7 @@ public class HitState : IPlayerState
         Debug.Log("Hit Exit");
     }
 
+    #region Handle
     public void HandleAttack()
     {
         // player.ChangeState(player.AttackState);
@@ -50,4 +51,11 @@ public class HitState : IPlayerState
     {
         // player.ChangeState(player.SkillState);
     }
+    public void HandleUltimate()
+    {
+        // player.ChangeState(player.UltimateState);
+    }
+    #endregion
 }
+
+

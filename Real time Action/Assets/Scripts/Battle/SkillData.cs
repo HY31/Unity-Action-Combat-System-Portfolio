@@ -1,4 +1,4 @@
-using UnityEngine;
+ï»¿using UnityEngine;
 
 [CreateAssetMenu(menuName = "Combat/Skill Data")]
 public class SkillData : ScriptableObject
@@ -8,6 +8,7 @@ public class SkillData : ScriptableObject
     public string endAnim;
 
     [Header("Resource")]
+    public float requiredEntryEnergy = 0f;
     public float energyCost = 40f;
 
     [Header("Timing")]
@@ -15,10 +16,13 @@ public class SkillData : ScriptableObject
     [Range(0f, 1f)] public float moveEnd = 0.5f;
     [Range(0f, 1f)] public float hitStart = 0.3f;
     [Range(0f, 1f)] public float hitEnd = 0.6f;
-    [Range(0f, 1f)] public float skillComboInputOpenTime = 0.55f;
+    [Range(0f, 1f)] public float chainInputOpenTime = 0.55f;
 
-    [Header("Combo")] // ¿¤·»Àº °­È­ Æ¯¼ö ½ºÅ³ ÀÌÈÄ Ãß°¡ÀûÀ¸·Î ¿¡³ÊÁö¸¦ Á¶±İ ½á¼­ ½ºÅ³ : »şÅ©³ª¹Ì »ç¿ë °¡´É ÇÏ±â¿¡ ÄŞº¸ ±¸Çö
-    public int nextComboIndex = -1;
+    [Header("Chain")] // ì—˜ë Œì€ ê°•í™” íŠ¹ìˆ˜ ìŠ¤í‚¬ ì´í›„ ì¶”ê°€ì ìœ¼ë¡œ ì—ë„ˆì§€ë¥¼ ì¡°ê¸ˆ ì¨ì„œ ìŠ¤í‚¬ : ìƒ¤í¬ë‚˜ë¯¸ ì‚¬ìš© ê°€ëŠ¥ í•˜ê¸°ì— ì½¤ë³´ êµ¬í˜„
+    public SkillData nextSkill;
+
+    [Header("HitBox")]
+    public int hitBoxSlotIndex = -1;
 
     [Header("Movement")]
     public float forwardMoveSpeed = 4f;
@@ -36,3 +40,4 @@ public class SkillData : ScriptableObject
     [Range(0f, 1f)] public float autoAimRotateUntil = 0.2f;
     public bool steerMoveToTarget = true;
 }
+

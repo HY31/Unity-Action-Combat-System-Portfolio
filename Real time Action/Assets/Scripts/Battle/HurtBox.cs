@@ -14,7 +14,7 @@ public class HurtBox : MonoBehaviour
 
     public void TakeHit()
     {
-        Debug.Log($"{name} ÇÇ°Ý!");
+        Debug.Log($"{name} í”¼ê²©!");
 
         Transform root = OwnerRoot;
 

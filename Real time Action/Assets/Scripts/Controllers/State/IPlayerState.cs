@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 
 public interface IPlayerState
 {
@@ -10,4 +10,8 @@ public interface IPlayerState
     void HandleDodge();
     void HandleHit();
     void HandleSkill();
+
+    void HandleUltimate();
 }
+
+

@@ -1,5 +1,6 @@
-using UnityEngine;
+﻿using UnityEngine;
 using UnityEngine.InputSystem;
+using TMPro;
 
 public class PlayerController : MonoBehaviour
 {
@@ -40,6 +41,7 @@ public class PlayerController : MonoBehaviour
     public DodgeState DodgeState { get; private set; }
     public HitState HitState { get; private set; }
     public SkillState SkillState { get; private set; }
+    public UltimateState UltimateState { get; private set; }
 
     [Header("Attack Combo")]
     public AttackData[] normalCombo;
@@ -51,12 +53,33 @@ public class PlayerController : MonoBehaviour
     [SerializeField] private float maxEnergy = 100f;
     [SerializeField] private float currentEnergy = 20f;
     [SerializeField] private float energyRecoveryRate = 1.2f;
+    [SerializeField] SkillData normalSkillBranch;
+    [SerializeField] SkillData enhancedSkillBranch;
     public float MaxEnergy => maxEnergy;
     public float CurrentEnergy => currentEnergy;
     public float EnergyRecoveryRate => energyRecoveryRate;
+    public SkillData NormalSkillBranch => normalSkillBranch;
+    public SkillData EnhancedSkillBranch => enhancedSkillBranch;
+    public bool IsEnhancedBranchReady =>
+        enhancedSkillBranch != null &&
+        currentEnergy >= enhancedSkillBranch.requiredEntryEnergy;
 
-    [Header("SkillCombo")]
-    public SkillData[] skillCombo;
+    public TMP_Text energyText_temp;
+
+    [Header("Ultimate")]
+    [SerializeField] private float maxDecibel = 3000f;
+    [SerializeField] private float currentDecibel = 0f;
+    [SerializeField] private float normalAttackDecibelGain = 80f;
+    [SerializeField] private float skillDecibelGain = 120f;
+
+    public float MaxDecibel => maxDecibel;
+    public float CurrentDecibel => currentDecibel;
+    public bool CanUseUltimate => currentDecibel >= maxDecibel;
+
+    public TMP_Text decibelText_temp;
+
+    [Header("HitBox")]
+    [SerializeField] private HitBox[] skillHitBoxSlots;
 
     [Header("Dodge")]
     [SerializeField] private float dodgeSpeed = 8f;
@@ -64,6 +87,8 @@ public class PlayerController : MonoBehaviour
 
     [Header("Animation")]
     public Animator Animator { get; private set; }
+
+    
 
     private void Awake()
     {
@@ -75,6 +100,7 @@ public class PlayerController : MonoBehaviour
         DodgeState = new DodgeState(this);
         HitState = new HitState(this);
         SkillState = new SkillState(this);
+        UltimateState = new UltimateState(this);
     }
 
     private void Start()
@@ -85,6 +111,12 @@ public class PlayerController : MonoBehaviour
     private void Update()
     {
         currentState?.Update();
+
+        if (energyText_temp != null)
+            energyText_temp.text = currentEnergy.ToString("F0");
+
+        if (decibelText_temp != null)
+            decibelText_temp.text = currentDecibel.ToString("F0");
     }
 
     public void ChangeState(IPlayerState newState)
@@ -250,26 +282,63 @@ public class PlayerController : MonoBehaviour
     public void GainEnergy(float amount)
     {
         currentEnergy = Mathf.Clamp(currentEnergy + amount, 0f, maxEnergy);
+        // NotifyEnergyChanged();  // 나중에 이벤트 용(무지갯빛 스킬 게이지 UI 옵저버 패턴)
     }
 
     public void RecoveryEnergyOverTime(float recoveryPerSecond)
     {
-        currentEnergy = Mathf.Clamp(currentEnergy + recoveryPerSecond * Time.deltaTime, 0f, maxEnergy); 
+        currentEnergy = Mathf.Clamp(
+            currentEnergy + recoveryPerSecond * Time.deltaTime,
+            0f,
+            maxEnergy);
+        // NotifyEnergyChanged();
     }
 
-    public bool TryUseEnergy(float needEnergy)
+    public bool TryUseEnergy(float cost)
     {
-        if(currentEnergy >= needEnergy)
-        {
-            currentEnergy -= needEnergy;
-            return true;
-        }
-        else return false;
+        if (currentEnergy < cost) return false;
+
+        currentEnergy -= cost;
+        // NotifyEnergyChanged();
+        return true;
+    }
+
+    public HitBox GetSkillHitBox(int slotIndex)
+    {
+        if(skillHitBoxSlots == null) return null;
+
+        if(slotIndex < 0 || slotIndex >= skillHitBoxSlots.Length) return null;
+
+        return skillHitBoxSlots[slotIndex];
     }
 
     public void SetCurrentSpeed(float speed)
     {
         CurrentSpeed = speed;
+    }
+
+    public void GainDecibel(float amount)
+    {
+        currentDecibel = Mathf.Clamp(currentDecibel + amount, 0f, maxDecibel);
+    }
+
+    public bool TryUseDecibel(float cost)
+    {
+        if (currentDecibel < cost)
+            return false;
+
+        currentDecibel -= cost;
+        return true;
+    }
+
+    public void GrantDecibelForNormalHit()
+    {
+        GainDecibel(normalAttackDecibelGain);
+    }
+
+    public void GrantDecibelForSkillHit()
+    {
+        GainDecibel(skillDecibelGain);
     }
 
     #region Input
@@ -301,5 +370,13 @@ public class PlayerController : MonoBehaviour
         if (value.isPressed)
             currentState?.HandleSkill();
     }
+
+    public void OnUltimate(InputValue value)
+    {
+        if (value.isPressed)
+            currentState?.HandleUltimate();
+    }
     #endregion
 }
+
+

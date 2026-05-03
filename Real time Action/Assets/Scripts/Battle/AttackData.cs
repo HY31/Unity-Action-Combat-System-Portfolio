@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 
 [CreateAssetMenu(menuName = "Combat/Attack Data")]
 public class AttackData : ScriptableObject
@@ -28,3 +28,5 @@ public class AttackData : ScriptableObject
     [Range(0f, 1f)] public float autoAimRotateUntil = 0.2f;
     public bool steerMoveToTarget = true;
 }
+
+

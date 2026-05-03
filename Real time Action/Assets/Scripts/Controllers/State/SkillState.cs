@@ -13,7 +13,7 @@ public class SkillState : IPlayerState
     private SkillData currentSkill;
     private SkillPhase phase;
 
-    // ¿¤·»ÀÇ °­È­ Æ¯¼ö ½ºÅ³Àº ¿¬°è °ø°ÝÀÌ ÀÖ±â ¶§¹®¿¡ ÄÞº¸¸¦ ³ÖÀ½
+    // ì—˜ë Œì˜ ê°•í™” íŠ¹ìˆ˜ ìŠ¤í‚¬ì€ ì—°ê³„ ê³µê²©ì´ ìžˆê¸° ë•Œë¬¸ì— ì½¤ë³´ë¥¼ ë„£ìŒ
     private int comboIndex;
 
     private bool bufferedSkillInput;
@@ -34,39 +34,30 @@ public class SkillState : IPlayerState
 
     public void Enter()
     {
-        comboIndex = 0;
-        bufferedSkillInput = false;
-        bufferedSkillTimer = 0f;
-        skillHitboxActive = false;
-        
-        ClearAttackAssist();
+        ResetRuntimeFlags();
 
-        if (player.skillCombo == null)
+        SkillData entrySkill = ResolveEntrySkill();
+        if (entrySkill == null)
         {
             player.ChangeState(player.LocomotionState);
             return;
         }
 
-        if (player.skillCombo != null && player.skillCombo.Length > 0)
-        {
-            currentSkill = player.skillCombo[comboIndex];
-            Debug.Log($"Current Skill is ready  = {currentSkill}");
-        }
-
-        if (skillHitBox == null)
-        {
-            skillHitBox = player.GetComponentInChildren<HitBox>(true);
-            Debug.Log($"HitBox is ready  = {skillHitBox}");
-        }
-
-        if (player.TryUseEnergy(currentSkill.energyCost))
-        {
-            StartSkill(player.skillCombo[comboIndex]);
-        }
-        else
+        if(!TryStartSkill(entrySkill))
         {
             player.ChangeState(player.LocomotionState);
+            return;
         }
+    }
+
+    private void ResetRuntimeFlags()
+    {
+        comboIndex = 0;
+        bufferedSkillInput = false;
+        bufferedSkillTimer = 0f;
+        skillHitboxActive = false;
+
+        ClearAttackAssist();
     }
 
     public void Update()
@@ -94,6 +85,7 @@ public class SkillState : IPlayerState
         ClearAttackAssist();
     }
 
+    #region Handle
     public void HandleAttack()
     {
         // player.ChangeState(player.AttackState);
@@ -114,18 +106,11 @@ public class SkillState : IPlayerState
         bufferedSkillInput = true;
         bufferedSkillTimer = BufferDuration;
     }
-
-    private void StartSkill(SkillData skillData)
+    public void HandleUltimate()
     {
-        currentSkill = skillData;
-        phase = SkillPhase.Attack;
-
-        SetHitBoxActive(false);
-        ResolveAttackAssist();
-
-        player.Animator.CrossFade(currentSkill.skillAnim, 0.05f);
-        Debug.Log($"Start Attack: {currentSkill.skillAnim}");
+        // player.ChangeState(player.UltimateState);
     }
+    #endregion
 
     private void UpdateSkilllPhase(AnimatorStateInfo info)
     {
@@ -150,9 +135,9 @@ public class SkillState : IPlayerState
         SetHitBoxActive(shouldHitBoxBeActive);
 
         // Preserve the existing combo buffer timing.
-        if (t >= currentSkill.skillComboInputOpenTime)
+        if (t >= currentSkill.chainInputOpenTime)
         {
-            TryChainCombo();
+            TryChainSkill();
         }
 
         // Transition to the end animation after the attack clip finishes.
@@ -175,21 +160,42 @@ public class SkillState : IPlayerState
         }
     }
 
-    private void TryChainCombo()
+    private bool TryStartSkill(SkillData skill)
+    {
+        if (skill == null)
+            return false;
+
+        if (!player.TryUseEnergy(skill.energyCost))
+            return false;
+
+        currentSkill = skill;
+        skillHitBox = player.GetSkillHitBox(skill.hitBoxSlotIndex);
+        phase = SkillPhase.Attack;
+
+        skillHitBox.SetRewardType(DecibelRewardType.Skill);
+        SetHitBoxActive(false);
+        ResolveAttackAssist();
+        player.Animator.CrossFade(currentSkill.skillAnim, 0.05f);
+        Debug.Log($"Start Attack: {currentSkill.skillAnim}");
+
+        return true;
+    }
+
+    private void TryChainSkill()
     {
         if (!bufferedSkillInput)
             return;
 
-        int nextIndex = currentSkill.nextComboIndex;
+        SkillData nextSkill = currentSkill.nextSkill;
 
-        if (nextIndex < 0 || nextIndex >= player.skillCombo.Length)
+        if (!CanEnterSkill(nextSkill))
             return;
 
         bufferedSkillInput = false;
         bufferedSkillTimer = 0f;
-        comboIndex = nextIndex;
 
-        StartSkill(player.skillCombo[comboIndex]);
+        if (!TryStartSkill(nextSkill))
+            return;
     }
 
     private void UpdateInputBuffer()
@@ -281,5 +287,24 @@ public class SkillState : IPlayerState
         assistTarget = null;
         attackAssistDirection = Vector3.zero;
         hasAttackAssist = false;
+    }
+
+    private bool CanEnterSkill(SkillData skill)
+    {
+        if(skill == null) return false;
+
+        return player.CurrentEnergy >= skill.requiredEntryEnergy &&
+            player.CurrentEnergy >= skill.energyCost;
+    }
+
+    private SkillData ResolveEntrySkill()
+    {
+        if (CanEnterSkill(player.EnhancedSkillBranch))
+            return player.EnhancedSkillBranch;
+
+        if(CanEnterSkill(player.NormalSkillBranch))
+            return player.NormalSkillBranch;
+
+        return null;
     }
 }

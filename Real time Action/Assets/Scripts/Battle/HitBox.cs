@@ -1,5 +1,12 @@
 using UnityEngine;
 
+public enum DecibelRewardType
+{
+    None,
+    NormalAttack,
+    Skill
+}
+
 public class HitBox : MonoBehaviour
 {
     private Collider hitCollider;
@@ -7,6 +14,8 @@ public class HitBox : MonoBehaviour
 
     [SerializeField] private Transform ownerRoot;
     private ThirdPersonCameraController camController;
+
+    private DecibelRewardType rewardType = DecibelRewardType.None;
 
     private void Awake()
     {
@@ -22,6 +31,11 @@ public class HitBox : MonoBehaviour
 
         if (hitCollider != null)
             hitCollider.enabled = value;
+    }
+
+    public void SetRewardType(DecibelRewardType type)
+    {
+        rewardType = type;
     }
 
     private void OnTriggerEnter(Collider other)
@@ -41,6 +55,20 @@ public class HitBox : MonoBehaviour
 
         if (ownerRoot != null && hurtBox.OwnerRoot == ownerRoot)
             return;
+
+        // 데시벨 얻는 부분
+        PlayerController ownerPlayer = ownerRoot != null? ownerRoot.GetComponent<PlayerController>() : null;
+
+        switch (rewardType)
+        {
+            case DecibelRewardType.NormalAttack:
+                ownerPlayer?.GrantDecibelForNormalHit();
+                break;
+
+            case DecibelRewardType.Skill:
+                ownerPlayer?.GrantDecibelForSkillHit();
+                break;
+        }
 
         Debug.Log("공격 적중!");
         camController?.Shake();

@@ -1,4 +1,4 @@
-using UnityEngine;
+ï»¿using UnityEngine;
 
 public class DodgeState : IPlayerState
 {
@@ -7,7 +7,7 @@ public class DodgeState : IPlayerState
     private float timer;
     private Vector3 dodgeDirection;
 
-    // ÀÏ´ÜÀº Àü¹æ È¸ÇÇ¸¸
+    // ì¼ë‹¨ì€ ì „ë°© íšŒí”¼ë§Œ
     private const string EVADE = "Avatar_Female_Size02_EllenOnCampus_Ani_Evade_Front";
 
     public DodgeState(PlayerController player)
@@ -45,6 +45,7 @@ public class DodgeState : IPlayerState
     {
     }
 
+    #region Handle
     public void HandleAttack() { }
     public void HandleDodge() { }
 
@@ -57,4 +58,11 @@ public class DodgeState : IPlayerState
     {
         // player.ChangeState(player.SkillState);
     }
+    public void HandleUltimate()
+    {
+        // player.ChangeState(player.UltimateState);
+    }
+    #endregion
 }
+
+
