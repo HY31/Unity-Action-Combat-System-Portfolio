@@ -2,10 +2,13 @@
 using UnityEngine.InputSystem;
 using TMPro;
 
+
 public class PlayerController : MonoBehaviour
 {
     private CharacterController controller;
     public CharacterController Controller => controller;
+
+    public bool IsInvincible { get; private set; }
 
     [Header("Reference")]
     [SerializeField] private Transform cameraYawPivot;
@@ -71,14 +74,18 @@ public class PlayerController : MonoBehaviour
     [SerializeField] private float currentDecibel = 0f;
     [SerializeField] private float normalAttackDecibelGain = 80f;
     [SerializeField] private float skillDecibelGain = 120f;
+    [SerializeField] UltimateData ultimateData;
+    [SerializeField] private HitBox ultHitBox;
+    public HitBox UltHitBox => ultHitBox;
 
+    public UltimateData UltimateData => ultimateData;
     public float MaxDecibel => maxDecibel;
     public float CurrentDecibel => currentDecibel;
     public bool CanUseUltimate => currentDecibel >= maxDecibel;
 
     public TMP_Text decibelText_temp;
 
-    [Header("HitBox")]
+    [Header("SkillHitBox")]
     [SerializeField] private HitBox[] skillHitBoxSlots;
 
     [Header("Dodge")]
@@ -126,6 +133,13 @@ public class PlayerController : MonoBehaviour
         currentState?.Exit();
         currentState = newState;
         currentState.Enter();
+    }
+
+    public void ReceiveHit()
+    {
+        if (IsInvincible) return;
+        
+        ChangeState(HitState);
     }
 
     public void HandleGravity()
@@ -334,11 +348,16 @@ public class PlayerController : MonoBehaviour
     public void GrantDecibelForNormalHit()
     {
         GainDecibel(normalAttackDecibelGain);
-    }
+    }   
 
     public void GrantDecibelForSkillHit()
     {
         GainDecibel(skillDecibelGain);
+    }
+
+    public void SetInvincible(bool value)
+    {
+        IsInvincible = value;
     }
 
     #region Input

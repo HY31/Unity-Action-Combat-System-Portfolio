@@ -13,9 +13,6 @@ public class SkillState : IPlayerState
     private SkillData currentSkill;
     private SkillPhase phase;
 
-    // 엘렌의 강화 특수 스킬은 연계 공격이 있기 때문에 콤보를 넣음
-    private int comboIndex;
-
     private bool bufferedSkillInput;
     private float bufferedSkillTimer;
     private const float BufferDuration = 0.2f;
@@ -52,7 +49,6 @@ public class SkillState : IPlayerState
 
     private void ResetRuntimeFlags()
     {
-        comboIndex = 0;
         bufferedSkillInput = false;
         bufferedSkillTimer = 0f;
         skillHitboxActive = false;

@@ -70,7 +70,6 @@ public class HitBox : MonoBehaviour
                 break;
         }
 
-        Debug.Log("공격 적중!");
         camController?.Shake();
 
         hurtBox.TakeHit();
