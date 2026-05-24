@@ -3,8 +3,8 @@
 public class HitState : IPlayerState
 {
     private PlayerController player;
-    float hitDuration = 0.5f;
-    float timer;
+    private float hitDuration = 0.5f;
+    private float timer;
 
     private const string HIT_L_FRONT = "Avatar_Female_Size02_EllenOnCampus_Ani_Hit_L_Front";
 
@@ -57,6 +57,11 @@ public class HitState : IPlayerState
     public void HandleUltimate()
     {
         // player.ChangeState(player.UltimateState);
+    }
+
+    public void HandleParry()
+    {
+        // player.ChangeState(player.ParryState);
     }
     #endregion
 }

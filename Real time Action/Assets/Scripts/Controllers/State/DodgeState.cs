@@ -62,6 +62,10 @@ public class DodgeState : IPlayerState
     {
         // player.ChangeState(player.UltimateState);
     }
+    public void HandleParry()
+    {
+        player.ChangeState(player.ParryState);
+    }
     #endregion
 }
 

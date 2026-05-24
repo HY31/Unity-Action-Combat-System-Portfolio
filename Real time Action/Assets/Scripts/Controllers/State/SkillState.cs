@@ -106,6 +106,10 @@ public class SkillState : IPlayerState
     {
         // player.ChangeState(player.UltimateState);
     }
+    public void HandleParry()
+    {
+        player.ChangeState(player.ParryState);
+    }
     #endregion
 
     private void UpdateSkilllPhase(AnimatorStateInfo info)

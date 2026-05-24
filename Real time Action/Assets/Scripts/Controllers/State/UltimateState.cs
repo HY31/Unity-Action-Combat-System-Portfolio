@@ -182,6 +182,10 @@ public class UltimateState : IPlayerState
     {
         // player.ChangeState(player.UltimateState);
     }
+    public void HandleParry()
+    {
+        // player.ChangeState(player.ParryState);
+    }
     #endregion
 }
 

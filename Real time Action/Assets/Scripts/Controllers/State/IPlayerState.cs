@@ -10,8 +10,8 @@ public interface IPlayerState
     void HandleDodge();
     void HandleHit();
     void HandleSkill();
-
     void HandleUltimate();
+    void HandleParry();
 }
 
 

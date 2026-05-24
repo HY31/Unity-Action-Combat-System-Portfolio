@@ -38,13 +38,13 @@ public class PlayerController : MonoBehaviour
 
     [Header("State")]
     private IPlayerState currentState;
-
     public LocomotionState LocomotionState { get; private set; }
     public AttackState AttackState { get; private set; }
     public DodgeState DodgeState { get; private set; }
     public HitState HitState { get; private set; }
     public SkillState SkillState { get; private set; }
     public UltimateState UltimateState { get; private set; }
+    public ParryState ParryState { get; private set; }
 
     [Header("Attack Combo")]
     public AttackData[] normalCombo;
@@ -92,10 +92,13 @@ public class PlayerController : MonoBehaviour
     [SerializeField] private float dodgeSpeed = 8f;
     public float DodgeSpeed => dodgeSpeed;
 
+    [Header("SupportPoint")]
+    [SerializeField] private SupportPointManager supportPointManager;
+    public SupportPointManager SupportPointManager => supportPointManager;
+    public int CurrentSupportPoint => supportPointManager != null ? supportPointManager.CurrentSupportPoint : 0;
+
     [Header("Animation")]
     public Animator Animator { get; private set; }
-
-    
 
     private void Awake()
     {
@@ -108,6 +111,7 @@ public class PlayerController : MonoBehaviour
         HitState = new HitState(this);
         SkillState = new SkillState(this);
         UltimateState = new UltimateState(this);
+        ParryState = new ParryState(this);
     }
 
     private void Start()
@@ -204,7 +208,7 @@ public class PlayerController : MonoBehaviour
         );
     }
 
-    public Transform FindAttackTarget(float radius, float maxAngle)
+    public Transform  FindAttackTarget(float radius, float maxAngle)
     {
         Vector3 origin = transform.position;
         Vector3 referenceForward = cameraYawPivot != null ? cameraYawPivot.forward : transform.forward;
@@ -325,7 +329,6 @@ public class PlayerController : MonoBehaviour
 
         return skillHitBoxSlots[slotIndex];
     }
-
     public void SetCurrentSpeed(float speed)
     {
         CurrentSpeed = speed;
@@ -360,6 +363,28 @@ public class PlayerController : MonoBehaviour
         IsInvincible = value;
     }
 
+    public EnemyController FindParryableEnemy()
+    {
+        Transform target = FindAttackTarget(10f, 360f);
+        Debug.Log($"Target is = {target}");
+        if (target == null) return null;
+
+        EnemyController enemy = target.GetComponent<EnemyController>();
+        Debug.Log($"Enemy is = {enemy}");
+        if (enemy == null) return null;
+
+        if (enemy.CurrentWarningType != WarningType.Yellow)
+            return null;
+
+        if (!enemy.IsInParryable)
+            return null;
+
+        if(!supportPointManager.HasEnoughSupportPoint(1))
+            return null;
+
+        return enemy;
+    }
+
     #region Input
     public void OnMove(InputValue value)
     {
@@ -368,7 +393,7 @@ public class PlayerController : MonoBehaviour
 
     public void OnAttack(InputValue value)
     {
-        if (value.isPressed)
+        if (value.isPressed)    
             currentState?.HandleAttack();
     }
 
@@ -377,7 +402,6 @@ public class PlayerController : MonoBehaviour
         if (value.isPressed)
             currentState?.HandleDodge();
     }
-
     public void OnHitTest(InputValue value)
     {
         if (value.isPressed)
@@ -394,6 +418,49 @@ public class PlayerController : MonoBehaviour
     {
         if (value.isPressed)
             currentState?.HandleUltimate();
+    }
+
+    public void OnParryAndSwitch_Nxt(InputValue value)
+    {
+        if (!value.isPressed)
+            return;
+
+        EnemyController enemy = FindParryableEnemy();
+
+        if (enemy == null || supportPointManager != null && !supportPointManager.TryUseSupportPoint(1))
+        {
+            Debug.Log("다음 캐릭터로 스위칭(패링 X)");
+            return;
+        }
+        else
+        {
+            enemy.InterruptAttack();
+            currentState?.HandleParry();
+
+            Debug.Log("패링!");
+        }
+    }
+
+    public void OnParryAndSwitch_Pre(InputValue value)
+    {
+        if (!value.isPressed)
+            return;
+
+        EnemyController enemy = FindParryableEnemy();
+
+
+        if (enemy == null || supportPointManager != null && !supportPointManager.TryUseSupportPoint(1))
+        {
+            Debug.Log("이전 캐릭터로 스위칭(패링 X)");
+            return;
+        }
+        else
+        {
+            enemy.InterruptAttack();
+            currentState?.HandleParry();
+
+            Debug.Log("패링!");
+        }
     }
     #endregion
 }

@@ -99,6 +99,10 @@ public class AttackState : IPlayerState
     {
         // player.ChangeState(player.UltimateState);
     }
+    public void HandleParry()
+    {
+        player.ChangeState(player.ParryState);
+    }
     #endregion
 
     private void StartAttack(AttackData attackData)

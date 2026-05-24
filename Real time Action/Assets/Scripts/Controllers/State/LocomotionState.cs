@@ -74,6 +74,10 @@ public class LocomotionState : IPlayerState
         if (!player.CanUseUltimate) return;
         player.ChangeState(player.UltimateState);
     }
+    public void HandleParry()
+    {
+        player.ChangeState(player.ParryState);
+    }
     #endregion
 
     private void UpdateAnimation(bool hasInput)

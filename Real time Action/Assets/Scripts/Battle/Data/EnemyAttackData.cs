@@ -17,11 +17,15 @@ public class EnemyAttackData : ScriptableObject
 
     [Header("Warning")]
     public WarningType warningType = WarningType.None;
-    public float warningLeadTime = 0.25f;
+    [Range(0f, 1f)] public float warningStart = 0.15f;
+    [Range(0f, 1f)] public float warningEnd = 0.28f;
 
     [Header("Timing")]
     [Range(0f, 1f)] public float startUpEnd = 0.3f;
     [Range(0f, 1f)] public float activeEnd = 0.5f;
+
+    [Range(0f, 1f)] public float parryStart = 0.15f;
+    [Range(0f, 1f)] public float parryEnd = 0.4f;
 
     [Header("Movement")]
     public float forwardMoveSpeed = 4f;
