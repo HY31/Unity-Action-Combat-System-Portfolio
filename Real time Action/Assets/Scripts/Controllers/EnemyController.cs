@@ -20,7 +20,7 @@ public class EnemyController : MonoBehaviour
 
     public bool IsInWarningWindow { get; private set; }
     public bool IsInActiveWindow { get; private set; }
-    public bool IsInParryable { get; private set; }
+    public bool IsInReactionWindow { get; private set; }
 
     [SerializeField] private PlayerController targetPlayer;
 
@@ -58,7 +58,10 @@ public class EnemyController : MonoBehaviour
 
         float t = info.normalizedTime;
 
-        bool canUseParrySupport = targetPlayer != null && targetPlayer.SupportPointManager.HasEnoughSupportPoint(1);
+        bool canUseParrySupport =
+            targetPlayer != null &&
+            targetPlayer.SupportPointManager != null &&
+            targetPlayer.SupportPointManager.HasEnoughSupportPoint(1);
 
         bool showWarning = t >= currentAttack.warningStart && t < currentAttack.warningEnd;
 
@@ -72,11 +75,11 @@ public class EnemyController : MonoBehaviour
             );
 
         bool shouldHit = t >= currentAttack.startUpEnd && t < currentAttack.activeEnd;
-        bool canParry = t >= currentAttack.parryStart && t < currentAttack.parryEnd;
+        bool canReaction = t >= currentAttack.reactionStart && t < currentAttack.reactionEnd;
 
         IsInWarningWindow = showWarning;
         IsInActiveWindow = shouldHit;
-        IsInParryable = canParry;
+        IsInReactionWindow = canReaction;
 
         attackHitBox.SetActive(shouldHit);
         warningSign_Yellow.SetActive(showYellow);
@@ -88,7 +91,7 @@ public class EnemyController : MonoBehaviour
             {
                 IsInWarningWindow = false;
                 IsInActiveWindow = false;
-                IsInParryable = false;
+                IsInReactionWindow = false;
                 attackHitBox.SetActive(false);  
                 currentAttack = null;
 
@@ -98,7 +101,7 @@ public class EnemyController : MonoBehaviour
 
             IsInWarningWindow = false;
             IsInActiveWindow = false;
-            IsInParryable = false;
+            IsInReactionWindow = false;
             animator.CrossFade(currentAttack.endAnim, 0.05f);
             attackHitBox.SetActive(false);
             currentAttack = null;
@@ -113,7 +116,7 @@ public class EnemyController : MonoBehaviour
         warningSign_Red.SetActive(false);
         IsInWarningWindow = false;
         IsInActiveWindow = false;
-        IsInParryable = false;
+        IsInReactionWindow = false;
 
         if (currentAttack != null && !string.IsNullOrEmpty(currentAttack.endAnim))
             animator.CrossFade(currentAttack.endAnim, 0.05f);

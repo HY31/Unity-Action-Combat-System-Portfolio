@@ -1,4 +1,4 @@
-﻿using UnityEngine;
+using UnityEngine;
 using UnityEngine.InputSystem;
 using TMPro;
 
@@ -376,13 +376,57 @@ public class PlayerController : MonoBehaviour
         if (enemy.CurrentWarningType != WarningType.Yellow)
             return null;
 
-        if (!enemy.IsInParryable)
+        if (!enemy.IsInReactionWindow)
             return null;
 
-        if(!supportPointManager.HasEnoughSupportPoint(1))
+        if(supportPointManager == null || !supportPointManager.HasEnoughSupportPoint(1))
             return null;
 
         return enemy;
+    }
+
+    public EnemyController FindPerfectDodgeEnemy()
+    {
+        Transform target = FindAttackTarget(10f, 360f);
+        if (target == null) return null;
+
+        EnemyController enemy = target.GetComponent<EnemyController>();
+        if (enemy == null) return null;
+
+        if (enemy.CurrentWarningType == WarningType.None)
+            return null;
+
+        if (!enemy.IsInReactionWindow)
+            return null;
+
+        return enemy;
+    }
+
+    private void TryParryOrPerfectDodge(string switchLog)
+    {
+        EnemyController enemy = FindParryableEnemy();
+
+        if (enemy != null && supportPointManager != null && supportPointManager.TryUseSupportPoint(1))
+        {
+            enemy.InterruptAttack();
+            currentState?.HandleParry();
+
+            Debug.Log("패링!");
+            return;
+        }
+
+        EnemyController dodgeEnemy = FindPerfectDodgeEnemy();
+
+        if (dodgeEnemy != null)
+        {
+            DodgeState.SetDodgeType(DodgeType.Perfect);
+            currentState?.HandleDodge();
+
+            Debug.Log("퍼펙트 도지!");
+            return;
+        }
+
+        Debug.Log(switchLog);
     }
 
     #region Input
@@ -399,8 +443,22 @@ public class PlayerController : MonoBehaviour
 
     public void OnDodge(InputValue value)
     {
-        if (value.isPressed)
+        if (!value.isPressed) return;
+
+        EnemyController dodgeEnemy = FindPerfectDodgeEnemy();
+
+        if(dodgeEnemy != null )
+        {
+            DodgeState.SetDodgeType(DodgeType.Perfect);
             currentState?.HandleDodge();
+
+            Debug.Log("극한 회피!!!");
+            return;
+        }
+
+        DodgeState.SetDodgeType(DodgeType.Normal);
+        Debug.Log("회피!");
+        currentState?.HandleDodge();
     }
     public void OnHitTest(InputValue value)
     {
@@ -425,20 +483,7 @@ public class PlayerController : MonoBehaviour
         if (!value.isPressed)
             return;
 
-        EnemyController enemy = FindParryableEnemy();
-
-        if (enemy == null || supportPointManager != null && !supportPointManager.TryUseSupportPoint(1))
-        {
-            Debug.Log("다음 캐릭터로 스위칭(패링 X)");
-            return;
-        }
-        else
-        {
-            enemy.InterruptAttack();
-            currentState?.HandleParry();
-
-            Debug.Log("패링!");
-        }
+        TryParryOrPerfectDodge("다음 캐릭터로 스위칭(패링/극한 회피 X)");
     }
 
     public void OnParryAndSwitch_Pre(InputValue value)
@@ -446,21 +491,7 @@ public class PlayerController : MonoBehaviour
         if (!value.isPressed)
             return;
 
-        EnemyController enemy = FindParryableEnemy();
-
-
-        if (enemy == null || supportPointManager != null && !supportPointManager.TryUseSupportPoint(1))
-        {
-            Debug.Log("이전 캐릭터로 스위칭(패링 X)");
-            return;
-        }
-        else
-        {
-            enemy.InterruptAttack();
-            currentState?.HandleParry();
-
-            Debug.Log("패링!");
-        }
+        TryParryOrPerfectDodge("이전 캐릭터로 스위칭(패링/극한 회피 X)");
     }
     #endregion
 }

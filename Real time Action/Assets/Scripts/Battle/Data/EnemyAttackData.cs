@@ -24,8 +24,8 @@ public class EnemyAttackData : ScriptableObject
     [Range(0f, 1f)] public float startUpEnd = 0.3f;
     [Range(0f, 1f)] public float activeEnd = 0.5f;
 
-    [Range(0f, 1f)] public float parryStart = 0.15f;
-    [Range(0f, 1f)] public float parryEnd = 0.4f;
+    [Range(0f, 1f)] public float reactionStart = 0.15f;
+    [Range(0f, 1f)] public float reactionEnd = 0.4f;
 
     [Header("Movement")]
     public float forwardMoveSpeed = 4f;

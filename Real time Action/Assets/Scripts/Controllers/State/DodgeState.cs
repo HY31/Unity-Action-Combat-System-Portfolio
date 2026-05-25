@@ -1,11 +1,20 @@
-﻿using UnityEngine;
+using UnityEngine;
+
+public enum DodgeType
+{
+    Normal,
+    Perfect
+}
 
 public class DodgeState : IPlayerState
 {
     private readonly PlayerController player;
-    private float dodgeDuration = 0.3f;
+    private const float NormalDodgeDuration = 0.3f;
+    private const float PerfectDodgeDuration = 0.45f;
+
     private float timer;
     private Vector3 dodgeDirection;
+    private DodgeType dodgeType = DodgeType.Normal;
 
     // 일단은 전방 회피만
     private const string EVADE = "Avatar_Female_Size02_EllenOnCampus_Ani_Evade_Front";
@@ -15,9 +24,15 @@ public class DodgeState : IPlayerState
         this.player = player;
     }
 
+    public void SetDodgeType(DodgeType type)
+    {
+        dodgeType = type;
+    }
+
     public void Enter()
     {
-        timer = dodgeDuration;
+        timer = dodgeType == DodgeType.Perfect ? PerfectDodgeDuration : NormalDodgeDuration;
+        player.SetInvincible(true);
 
         Vector3 inputDir = player.GetCameraRelativeMoveDirection();
         dodgeDirection = inputDir.sqrMagnitude > 0.0001f ? inputDir : player.transform.forward;
@@ -43,15 +58,22 @@ public class DodgeState : IPlayerState
 
     public void Exit()
     {
+        player.SetInvincible(false);
+        dodgeType = DodgeType.Normal;
     }
 
     #region Handle
-    public void HandleAttack() { }
+    public void HandleAttack()
+    {
+
+    }
+
     public void HandleDodge() { }
 
     public void HandleHit()
     {
-        player.ChangeState(player.HitState);
+        if (!player.IsInvincible)
+            player.ChangeState(player.HitState);
     }
 
     public void HandleSkill()
@@ -68,5 +90,4 @@ public class DodgeState : IPlayerState
     }
     #endregion
 }
-
 
