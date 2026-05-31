@@ -299,11 +299,11 @@ public class SkillState : IPlayerState
 
     private SkillData ResolveEntrySkill()
     {
-        if (CanEnterSkill(player.EnhancedSkillBranch))
-            return player.EnhancedSkillBranch;
+        if (CanEnterSkill(player.CharacterData.enhancedSkillBranch))
+            return player.CharacterData.enhancedSkillBranch;
 
-        if(CanEnterSkill(player.NormalSkillBranch))
-            return player.NormalSkillBranch;
+        if(CanEnterSkill(player.CharacterData.normalSkillBranch))
+            return player.CharacterData.normalSkillBranch;
 
         return null;
     }

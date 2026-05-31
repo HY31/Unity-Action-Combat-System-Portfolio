@@ -8,6 +8,8 @@ public class EnemyController : MonoBehaviour
         Attack
     }
 
+    [SerializeField] private SupportPointManager supportPointManager;
+
     public Animator animator;
     public EnemyAttackData[] attackPatterns;
     private EnemyAttackData currentAttack;
@@ -21,8 +23,6 @@ public class EnemyController : MonoBehaviour
     public bool IsInWarningWindow { get; private set; }
     public bool IsInActiveWindow { get; private set; }
     public bool IsInReactionWindow { get; private set; }
-
-    [SerializeField] private PlayerController targetPlayer;
 
     EnemyAttackPhase phase;
 
@@ -59,9 +59,8 @@ public class EnemyController : MonoBehaviour
         float t = info.normalizedTime;
 
         bool canUseParrySupport =
-            targetPlayer != null &&
-            targetPlayer.SupportPointManager != null &&
-            targetPlayer.SupportPointManager.HasEnoughSupportPoint(1);
+            supportPointManager != null &&
+            supportPointManager.HasEnoughSupportPoint(1);
 
         bool showWarning = t >= currentAttack.warningStart && t < currentAttack.warningEnd;
 

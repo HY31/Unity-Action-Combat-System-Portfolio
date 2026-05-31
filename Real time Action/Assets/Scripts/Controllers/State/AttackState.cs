@@ -45,7 +45,7 @@ public class AttackState : IPlayerState
             Debug.Log($"HitBox is ready  = {hitBox}");
         }
 
-        StartAttack(player.normalCombo[comboIndex]);
+        StartAttack(player.CharacterData.normalCombo[comboIndex]);
     }
 
     public void Update()
@@ -173,14 +173,14 @@ public class AttackState : IPlayerState
 
         int nextIndex = currentAttack.nextComboIndex;
 
-        if (nextIndex < 0 || nextIndex >= player.normalCombo.Length)
+        if (nextIndex < 0 || nextIndex >= player.CharacterData.normalCombo.Length)
             return;
 
         bufferedAttackInput = false;
         bufferedAttackTimer = 0f;
         comboIndex = nextIndex;
 
-        StartAttack(player.normalCombo[comboIndex]);
+        StartAttack(player.CharacterData.normalCombo[comboIndex]);
     }
 
     private void UpdateInputBuffer()

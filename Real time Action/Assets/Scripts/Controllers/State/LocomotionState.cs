@@ -3,14 +3,8 @@
 public class LocomotionState : IPlayerState
 {
     private readonly PlayerController player;
+    private CharacterData characterData;
     private string currentAnim;
-
-    private const string IDLE = "Avatar_Female_Size02_EllenOnCampus_Ani_Idle_Loop";
-    private const string WALK_START = "Avatar_Female_Size02_EllenOnCampus_Ani_Walk_Start";
-    private const string WALK_LOOP = "Avatar_Female_Size02_EllenOnCampus_Ani_Walk_Loop";
-    private const string WALK_END = "Avatar_Female_Size02_EllenOnCampus_Ani_Walk_End";
-    private const string RUN_LOOP = "Avatar_Female_Size02_EllenOnCampus_Ani_Run_Loop";
-    private const string RUN_END = "Avatar_Female_Size02_EllenOnCampus_Ani_Run_End";
 
     public LocomotionState(PlayerController player)
     {
@@ -19,7 +13,8 @@ public class LocomotionState : IPlayerState
 
     public void Enter()
     {
-        PlayAnimation(IDLE, 0.1f);
+        characterData = player.CharacterData;
+        PlayAnimation(characterData.idleAnim, 0.1f);
     }
 
     public void Update()
@@ -86,61 +81,61 @@ public class LocomotionState : IPlayerState
 
         if (!hasInput)
         {
-            if (currentAnim == WALK_START)
+            if (currentAnim == characterData.walkStartAnim)
             {
                 if (info.normalizedTime >= 0.95f)
-                    PlayAnimation(WALK_END, 0.08f);
+                    PlayAnimation(characterData.walkEndAnim, 0.08f);
                 return;
             }
 
-            if (currentAnim == WALK_LOOP)
+            if (currentAnim == characterData.walkLoopAnim)
             {
-                PlayAnimation(WALK_END, 0.08f);
+                PlayAnimation(characterData.walkEndAnim, 0.08f);
                 return;
             }
 
-            if (currentAnim == RUN_LOOP)
+            if (currentAnim == characterData.runLoopAnim)
             {
-                PlayAnimation(RUN_END, 0.08f);
+                PlayAnimation(characterData.runEndAnim, 0.08f);
                 return;
             }
 
-            if (currentAnim == WALK_END)
+            if (currentAnim == characterData.walkEndAnim)
             {
                 if (info.normalizedTime >= 0.95f)
-                    PlayAnimation(IDLE, 0.08f);
+                    PlayAnimation(characterData.idleAnim, 0.08f);
                 return;
             }
 
-            if (currentAnim != IDLE)
-                PlayAnimation(IDLE, 0.08f);
+            if (currentAnim != characterData.idleAnim)
+                PlayAnimation(characterData.idleAnim, 0.08f);
 
             return;
         }
 
         // 입력 있음
-        if (currentAnim == IDLE || currentAnim == WALK_END)
+        if (currentAnim == characterData.idleAnim || currentAnim == characterData.walkEndAnim)
         {
-            PlayAnimation(WALK_START, 0.08f);
+            PlayAnimation(characterData.walkStartAnim, 0.08f);
             return;
         }
 
-        if (currentAnim == WALK_START)
+        if (currentAnim == characterData.walkStartAnim)
         {
             if (info.normalizedTime >= 0.95f)
             {
                 if (player.CurrentSpeed >= player.RunThreshold)
-                    PlayAnimation(RUN_LOOP, 0.08f);
+                    PlayAnimation(characterData.runLoopAnim, 0.08f);
                 else
-                    PlayAnimation(WALK_LOOP, 0.08f);
+                    PlayAnimation(characterData.walkLoopAnim, 0.08f);
             }
             return;
         }
 
         if (player.CurrentSpeed >= player.RunThreshold)
-            PlayAnimation(RUN_LOOP, 0.1f);
+            PlayAnimation(characterData.runLoopAnim, 0.1f);
         else
-            PlayAnimation(WALK_LOOP, 0.1f);
+            PlayAnimation(characterData.walkLoopAnim, 0.1f);
     }
 
     private void PlayAnimation(string animationName, float fadeTime)

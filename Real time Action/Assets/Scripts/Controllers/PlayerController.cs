@@ -8,20 +8,28 @@ public class PlayerController : MonoBehaviour
     private CharacterController controller;
     public CharacterController Controller => controller;
 
+    [SerializeField] private CharacterData characterData;
+    public CharacterData CharacterData => characterData;
+
     public bool IsInvincible { get; private set; }
+
+    [Header("Party")]
+    [SerializeField] private PartyManager partyManager;
+    public PartyManager PartyManager => partyManager;
 
     [Header("Reference")]
     [SerializeField] private Transform cameraYawPivot;
     public Transform CameraYawPivot => cameraYawPivot;
 
+    [SerializeField] private Transform cameraFollowTarget;
+    public Transform CameraFollowTarget => cameraFollowTarget;
+
     [Header("Move")]
-    [SerializeField] private float maxSpeed = 6f;
     [SerializeField] private float runThreshold = 4f;
     [SerializeField] private float acceleration = 12f;
     [SerializeField] private float deceleration = 18f;
     [SerializeField] private float rotationSpeed = 12f;
 
-    public float MaxSpeed => maxSpeed;
     public float RunThreshold => runThreshold;
     public float Acceleration => acceleration;
     public float Deceleration => deceleration;
@@ -38,16 +46,14 @@ public class PlayerController : MonoBehaviour
 
     [Header("State")]
     private IPlayerState currentState;
+    public IPlayerState CurrentState => currentState;
     public LocomotionState LocomotionState { get; private set; }
     public AttackState AttackState { get; private set; }
     public DodgeState DodgeState { get; private set; }
     public HitState HitState { get; private set; }
     public SkillState SkillState { get; private set; }
     public UltimateState UltimateState { get; private set; }
-    public ParryState ParryState { get; private set; }
-
-    [Header("Attack Combo")]
-    public AttackData[] normalCombo;
+    public SupportState ParryState { get; private set; }
 
     [Header("Attack Assist")]
     [SerializeField] private LayerMask attackTargetMask = ~0;
@@ -56,16 +62,12 @@ public class PlayerController : MonoBehaviour
     [SerializeField] private float maxEnergy = 100f;
     [SerializeField] private float currentEnergy = 20f;
     [SerializeField] private float energyRecoveryRate = 1.2f;
-    [SerializeField] SkillData normalSkillBranch;
-    [SerializeField] SkillData enhancedSkillBranch;
     public float MaxEnergy => maxEnergy;
     public float CurrentEnergy => currentEnergy;
     public float EnergyRecoveryRate => energyRecoveryRate;
-    public SkillData NormalSkillBranch => normalSkillBranch;
-    public SkillData EnhancedSkillBranch => enhancedSkillBranch;
     public bool IsEnhancedBranchReady =>
-        enhancedSkillBranch != null &&
-        currentEnergy >= enhancedSkillBranch.requiredEntryEnergy;
+        characterData.enhancedSkillBranch != null &&
+        currentEnergy >= characterData.enhancedSkillBranch.requiredEntryEnergy;
 
     public TMP_Text energyText_temp;
 
@@ -74,11 +76,9 @@ public class PlayerController : MonoBehaviour
     [SerializeField] private float currentDecibel = 0f;
     [SerializeField] private float normalAttackDecibelGain = 80f;
     [SerializeField] private float skillDecibelGain = 120f;
-    [SerializeField] UltimateData ultimateData;
     [SerializeField] private HitBox ultHitBox;
     public HitBox UltHitBox => ultHitBox;
 
-    public UltimateData UltimateData => ultimateData;
     public float MaxDecibel => maxDecibel;
     public float CurrentDecibel => currentDecibel;
     public bool CanUseUltimate => currentDecibel >= maxDecibel;
@@ -88,22 +88,29 @@ public class PlayerController : MonoBehaviour
     [Header("SkillHitBox")]
     [SerializeField] private HitBox[] skillHitBoxSlots;
 
-    [Header("Dodge")]
-    [SerializeField] private float dodgeSpeed = 8f;
-    public float DodgeSpeed => dodgeSpeed;
-
     [Header("SupportPoint")]
     [SerializeField] private SupportPointManager supportPointManager;
     public SupportPointManager SupportPointManager => supportPointManager;
     public int CurrentSupportPoint => supportPointManager != null ? supportPointManager.CurrentSupportPoint : 0;
 
+    public TMP_Text supportPointText_temp;
+
     [Header("Animation")]
     public Animator Animator { get; private set; }
+
+    private bool isInitialized;
 
     private void Awake()
     {
         controller = GetComponent<CharacterController>();
         Animator = GetComponent<Animator>();
+
+        if (characterData == null)
+        {
+            Debug.LogError("CharacterData is missing", this);
+            enabled = false;
+            return;
+        }
 
         LocomotionState = new LocomotionState(this);
         AttackState = new AttackState(this);
@@ -111,11 +118,15 @@ public class PlayerController : MonoBehaviour
         HitState = new HitState(this);
         SkillState = new SkillState(this);
         UltimateState = new UltimateState(this);
-        ParryState = new ParryState(this);
+        ParryState = new SupportState(this);
+
+        isInitialized = true;
     }
 
     private void Start()
     {
+        if (!isInitialized) return;
+
         ChangeState(LocomotionState);
     }
 
@@ -128,6 +139,9 @@ public class PlayerController : MonoBehaviour
 
         if (decibelText_temp != null)
             decibelText_temp.text = currentDecibel.ToString("F0");
+
+        if (supportPointText_temp != null && supportPointManager != null)
+            supportPointText_temp.text = supportPointManager.CurrentSupportPoint.ToString("F0");
     }
 
     public void ChangeState(IPlayerState newState)
@@ -142,7 +156,7 @@ public class PlayerController : MonoBehaviour
     public void ReceiveHit()
     {
         if (IsInvincible) return;
-        
+
         ChangeState(HitState);
     }
 
@@ -161,7 +175,7 @@ public class PlayerController : MonoBehaviour
 
     public void UpdateSpeed(bool hasInput)
     {
-        float targetSpeed = hasInput ? maxSpeed : 0f;
+        float targetSpeed = hasInput ? characterData.maxSpeed : 0f;
         float speedChangeRate = hasInput ? acceleration : deceleration;
 
         CurrentSpeed = Mathf.MoveTowards(
@@ -208,7 +222,7 @@ public class PlayerController : MonoBehaviour
         );
     }
 
-    public Transform  FindAttackTarget(float radius, float maxAngle)
+    public Transform FindAttackTarget(float radius, float maxAngle)
     {
         Vector3 origin = transform.position;
         Vector3 referenceForward = cameraYawPivot != null ? cameraYawPivot.forward : transform.forward;
@@ -323,9 +337,9 @@ public class PlayerController : MonoBehaviour
 
     public HitBox GetSkillHitBox(int slotIndex)
     {
-        if(skillHitBoxSlots == null) return null;
+        if (skillHitBoxSlots == null) return null;
 
-        if(slotIndex < 0 || slotIndex >= skillHitBoxSlots.Length) return null;
+        if (slotIndex < 0 || slotIndex >= skillHitBoxSlots.Length) return null;
 
         return skillHitBoxSlots[slotIndex];
     }
@@ -351,7 +365,7 @@ public class PlayerController : MonoBehaviour
     public void GrantDecibelForNormalHit()
     {
         GainDecibel(normalAttackDecibelGain);
-    }   
+    }
 
     public void GrantDecibelForSkillHit()
     {
@@ -363,71 +377,7 @@ public class PlayerController : MonoBehaviour
         IsInvincible = value;
     }
 
-    public EnemyController FindParryableEnemy()
-    {
-        Transform target = FindAttackTarget(10f, 360f);
-        Debug.Log($"Target is = {target}");
-        if (target == null) return null;
 
-        EnemyController enemy = target.GetComponent<EnemyController>();
-        Debug.Log($"Enemy is = {enemy}");
-        if (enemy == null) return null;
-
-        if (enemy.CurrentWarningType != WarningType.Yellow)
-            return null;
-
-        if (!enemy.IsInReactionWindow)
-            return null;
-
-        if(supportPointManager == null || !supportPointManager.HasEnoughSupportPoint(1))
-            return null;
-
-        return enemy;
-    }
-
-    public EnemyController FindPerfectDodgeEnemy()
-    {
-        Transform target = FindAttackTarget(10f, 360f);
-        if (target == null) return null;
-
-        EnemyController enemy = target.GetComponent<EnemyController>();
-        if (enemy == null) return null;
-
-        if (enemy.CurrentWarningType == WarningType.None)
-            return null;
-
-        if (!enemy.IsInReactionWindow)
-            return null;
-
-        return enemy;
-    }
-
-    private void TryParryOrPerfectDodge(string switchLog)
-    {
-        EnemyController enemy = FindParryableEnemy();
-
-        if (enemy != null && supportPointManager != null && supportPointManager.TryUseSupportPoint(1))
-        {
-            enemy.InterruptAttack();
-            currentState?.HandleParry();
-
-            Debug.Log("패링!");
-            return;
-        }
-
-        EnemyController dodgeEnemy = FindPerfectDodgeEnemy();
-
-        if (dodgeEnemy != null)
-        {
-            DodgeState.SetDodgeType(DodgeType.Perfect);
-            currentState?.HandleDodge();
-
-            Debug.Log("퍼펙트 도지!");
-            return;
-        }
-
-        Debug.Log(switchLog);
-    }
 
     #region Input
     public void OnMove(InputValue value)
@@ -437,7 +387,7 @@ public class PlayerController : MonoBehaviour
 
     public void OnAttack(InputValue value)
     {
-        if (value.isPressed)    
+        if (value.isPressed)
             currentState?.HandleAttack();
     }
 
@@ -445,9 +395,9 @@ public class PlayerController : MonoBehaviour
     {
         if (!value.isPressed) return;
 
-        EnemyController dodgeEnemy = FindPerfectDodgeEnemy();
+        EnemyController dodgeEnemy = partyManager.FindReactionEnemy(this);
 
-        if(dodgeEnemy != null )
+        if (dodgeEnemy != null)
         {
             DodgeState.SetDodgeType(DodgeType.Perfect);
             currentState?.HandleDodge();
@@ -478,20 +428,20 @@ public class PlayerController : MonoBehaviour
             currentState?.HandleUltimate();
     }
 
-    public void OnParryAndSwitch_Nxt(InputValue value)
+    public void OnSwitch_Nxt(InputValue value)
     {
         if (!value.isPressed)
             return;
 
-        TryParryOrPerfectDodge("다음 캐릭터로 스위칭(패링/극한 회피 X)");
+        partyManager.Switch_Nxt();
     }
 
-    public void OnParryAndSwitch_Pre(InputValue value)
+    public void OnSwitch_Pre(InputValue value)
     {
         if (!value.isPressed)
             return;
 
-        TryParryOrPerfectDodge("이전 캐릭터로 스위칭(패링/극한 회피 X)");
+        partyManager.Switch_Pre();
     }
     #endregion
 }

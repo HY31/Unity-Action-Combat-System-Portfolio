@@ -6,8 +6,6 @@ public class HitState : IPlayerState
     private float hitDuration = 0.5f;
     private float timer;
 
-    private const string HIT_L_FRONT = "Avatar_Female_Size02_EllenOnCampus_Ani_Hit_L_Front";
-
     public HitState(PlayerController player)
     {
         this.player = player;
@@ -17,7 +15,7 @@ public class HitState : IPlayerState
     {
         Debug.Log("Hit Enter");
         timer = hitDuration;
-        player.Animator.CrossFade(HIT_L_FRONT, 0.05f);
+        player.Animator.CrossFade(player.CharacterData.hitLightFrontAnim, 0.05f);
     }
     public void Update()
     {
@@ -61,7 +59,7 @@ public class HitState : IPlayerState
 
     public void HandleParry()
     {
-        // player.ChangeState(player.ParryState);
+        // player.ChangeState(player.SupportState);
     }
     #endregion
 }

@@ -104,6 +104,13 @@ public class ThirdPersonCameraController : MonoBehaviour
         transform.position = new Vector3(x, y, z);
     }
 
+    public void SetTarget(Transform newTarget)
+    {
+        if (newTarget == null) return;
+
+        target = newTarget;
+    }
+
     private void ApplyRotation()
     {
         yawPivot.rotation = Quaternion.Euler(0f, yaw, 0f);

@@ -9,6 +9,7 @@ public enum DodgeType
 public class DodgeState : IPlayerState
 {
     private readonly PlayerController player;
+    private CharacterData characterData;
     private const float NormalDodgeDuration = 0.3f;
     private const float PerfectDodgeDuration = 0.45f;
 
@@ -16,8 +17,6 @@ public class DodgeState : IPlayerState
     private Vector3 dodgeDirection;
     private DodgeType dodgeType = DodgeType.Normal;
 
-    // 일단은 전방 회피만
-    private const string EVADE = "Avatar_Female_Size02_EllenOnCampus_Ani_Evade_Front";
 
     public DodgeState(PlayerController player)
     {
@@ -31,6 +30,8 @@ public class DodgeState : IPlayerState
 
     public void Enter()
     {
+        characterData = player.CharacterData;
+
         timer = dodgeType == DodgeType.Perfect ? PerfectDodgeDuration : NormalDodgeDuration;
         player.SetInvincible(true);
 
@@ -38,7 +39,7 @@ public class DodgeState : IPlayerState
         dodgeDirection = inputDir.sqrMagnitude > 0.0001f ? inputDir : player.transform.forward;
 
         player.RotateToward(dodgeDirection);
-        player.Animator.CrossFade(EVADE, 0.05f);
+        player.Animator.CrossFade(characterData.dodgeFrontAnim, 0.05f);
     }
 
     public void Update()
@@ -47,7 +48,7 @@ public class DodgeState : IPlayerState
 
         player.HandleGravity();
 
-        Vector3 move = dodgeDirection * player.DodgeSpeed;
+        Vector3 move = dodgeDirection * player.CharacterData.dodgeSpeed;
         move.y = player.YVelocity;
 
         player.Controller.Move(move * Time.deltaTime);

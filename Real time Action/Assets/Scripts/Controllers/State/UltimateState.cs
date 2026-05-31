@@ -30,7 +30,7 @@ public class UltimateState : IPlayerState
     {
         if (ultData == null)
         {
-            ultData = player.UltimateData;
+            ultData = player.CharacterData.ultimateData;
         }
 
         if (!player.TryUseDecibel(ultData.decibelCost))
@@ -184,7 +184,7 @@ public class UltimateState : IPlayerState
     }
     public void HandleParry()
     {
-        // player.ChangeState(player.ParryState);
+        // player.ChangeState(player.SupportState);
     }
     #endregion
 }
