@@ -87,6 +87,7 @@ public class PlayerController : MonoBehaviour
 
     [Header("SkillHitBox")]
     [SerializeField] private HitBox[] skillHitBoxSlots;
+    public int SkillHitBoxSlotCount => skillHitBoxSlots != null ? skillHitBoxSlots.Length : 0;
 
     [Header("SupportPoint")]
     [SerializeField] private SupportPointManager supportPointManager;

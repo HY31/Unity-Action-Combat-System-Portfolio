@@ -15,4 +15,6 @@ public class BillboardToCamera : MonoBehaviour
 
         transform.rotation = Quaternion.LookRotation(transform.position - cam.transform.position);
     }
+
+
 }
