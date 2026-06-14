@@ -20,7 +20,6 @@ public class HitState : IPlayerState
     public void Update()
     {
         timer -= Time.deltaTime;
-        Debug.Log("피격!!!");
 
         if (timer <= 0f)
         {

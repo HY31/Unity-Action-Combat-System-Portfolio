@@ -56,23 +56,24 @@ public class HitBox : MonoBehaviour
         if (ownerRoot != null && hurtBox.OwnerRoot == ownerRoot)
             return;
 
-        // 데시벨 얻는 부분
-        PlayerController ownerPlayer = ownerRoot != null? ownerRoot.GetComponent<PlayerController>() : null;
-
-        switch (rewardType)
+        if(hurtBox.TryTakeHit())
         {
-            case DecibelRewardType.NormalAttack:
-                ownerPlayer?.GrantDecibelForNormalHit();
-                break;
+            camController?.Shake();
+            HitStop.DoHitStop(0.05f);
 
-            case DecibelRewardType.Skill:
-                ownerPlayer?.GrantDecibelForSkillHit();
-                break;
+            // 데시벨 얻는 부분
+            PlayerController ownerPlayer = ownerRoot != null ? ownerRoot.GetComponent<PlayerController>() : null;
+
+            switch (rewardType)
+            {
+                case DecibelRewardType.NormalAttack:
+                    ownerPlayer?.GrantDecibelForNormalHit();
+                    break;
+
+                case DecibelRewardType.Skill:
+                    ownerPlayer?.GrantDecibelForSkillHit();
+                    break;
+            }
         }
-
-        camController?.Shake();
-
-        hurtBox.TakeHit();
-        HitStop.DoHitStop(0.05f);
     }
 }

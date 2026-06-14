@@ -39,10 +39,17 @@ public class AttackState : IPlayerState
         hitboxActive = false;
         ClearAttackAssist();
 
+        if (player.CharacterData == null
+            || player.CharacterData.normalCombo == null
+            || player.CharacterData.normalCombo.Length == 0)
+        {
+            player.ChangeState(player.LocomotionState);
+            return;
+        }
+
         if (hitBox == null)
         {
             hitBox = player.GetComponentInChildren<HitBox>(true);
-            Debug.Log($"HitBox is ready  = {hitBox}");
         }
 
         StartAttack(player.CharacterData.normalCombo[comboIndex]);
@@ -110,12 +117,17 @@ public class AttackState : IPlayerState
         currentAttack = attackData;
         phase = AttackPhase.Attack;
 
+        if (hitBox == null)
+        {
+            player.ChangeState(player.LocomotionState);
+            return;
+        }
+
         hitBox.SetRewardType(DecibelRewardType.NormalAttack);
         SetHitBoxActive(false);
         ResolveAttackAssist();
 
         player.Animator.CrossFade(currentAttack.attackAnim, 0.05f);
-        Debug.Log($"Start Attack: {currentAttack.attackAnim}");
     }
 
     private void UpdateAttackPhase(AnimatorStateInfo info)
@@ -137,7 +149,6 @@ public class AttackState : IPlayerState
 
         // Sync hitbox timing with the active frames.
         bool shouldHitBoxBeActive = t >= currentAttack.startUpEnd && t < currentAttack.activeEnd;
-        Debug.Log($"shouldHitBoxBeActive = {shouldHitBoxBeActive}");
         SetHitBoxActive(shouldHitBoxBeActive);
 
         // Preserve the existing combo buffer timing.
@@ -206,7 +217,6 @@ public class AttackState : IPlayerState
             return;
 
         hitboxActive = active;
-        Debug.Log($"skillHitboxActive = {hitboxActive}");
         hitBox.SetActive(active);
     }
 

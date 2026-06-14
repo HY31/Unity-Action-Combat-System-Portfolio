@@ -165,18 +165,24 @@ public class SkillState : IPlayerState
         if (skill == null)
             return false;
 
+        skillHitBox = player.GetSkillHitBox(skill.hitBoxSlotIndex);
+
+        if (skillHitBox == null)
+        {
+            Debug.LogError("skill hit box is missing.");
+            return false;
+        }
+
         if (!player.TryUseEnergy(skill.energyCost))
             return false;
 
         currentSkill = skill;
-        skillHitBox = player.GetSkillHitBox(skill.hitBoxSlotIndex);
         phase = SkillPhase.Attack;
 
         skillHitBox.SetRewardType(DecibelRewardType.Skill);
         SetHitBoxActive(false);
         ResolveAttackAssist();
         player.Animator.CrossFade(currentSkill.skillAnim, 0.05f);
-        Debug.Log($"Start Attack: {currentSkill.skillAnim}");
 
         return true;
     }
@@ -221,7 +227,6 @@ public class SkillState : IPlayerState
             return;
 
         skillHitboxActive = active;
-        Debug.Log($"skillHitboxActive = {skillHitboxActive}");
         skillHitBox.SetActive(active);
     }
 

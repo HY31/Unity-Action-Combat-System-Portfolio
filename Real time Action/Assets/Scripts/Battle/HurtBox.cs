@@ -20,16 +20,19 @@ public class HurtBox : MonoBehaviour
             ownerPlayer = ownerRoot.GetComponent<PlayerController>();
     }
 
-    public void TakeHit()
+    public bool TryTakeHit()
     {
-        if(ownerPlayer != null)
-        {
-            ownerPlayer.ReceiveHit();
-            return;
-        }
+        if (ownerPlayer != null)
+            return ownerPlayer.TryReceiveHit();
 
         Debug.Log($"{name} 피격!"); // 테스트용
 
+        ApplyNockback();
+        return true;
+    }
+
+    public void ApplyNockback()
+    {
         Transform root = OwnerRoot;
 
         Vector3 dir = (root.position - Camera.main.transform.position).normalized;

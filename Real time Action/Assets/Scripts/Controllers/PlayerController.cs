@@ -154,11 +154,12 @@ public class PlayerController : MonoBehaviour
         currentState.Enter();
     }
 
-    public void ReceiveHit()
+    public bool TryReceiveHit()
     {
-        if (IsInvincible) return;
+        if (IsInvincible) return false;
 
         ChangeState(HitState);
+        return true;
     }
 
     public void HandleGravity()
@@ -377,7 +378,6 @@ public class PlayerController : MonoBehaviour
     {
         IsInvincible = value;
     }
-
 
 
     #region Input

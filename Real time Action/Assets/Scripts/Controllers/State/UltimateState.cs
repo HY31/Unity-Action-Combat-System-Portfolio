@@ -28,6 +28,13 @@ public class UltimateState : IPlayerState
 
     public void Enter()
     {
+        if (player.CharacterData == null || player.CharacterData.ultimateData == null)
+        {
+            Debug.LogError("ultState : character data is missing.");
+            player.ChangeState(player.LocomotionState);
+            return;
+        }
+
         if (ultData == null)
         {
             ultData = player.CharacterData.ultimateData;
