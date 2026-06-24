@@ -29,6 +29,52 @@ public class CharacterBuildPipeline : MonoBehaviour
                 Debug.Log(message);
         }
 
+        void AddErrorIfEmpty(string value, string label)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                AddError($"{label} is missing.");
+        }
+
+        void ValidateAttackData(AttackData attack, string label)
+        {
+            if (attack == null)
+            {
+                AddError($"{label} is missing.");
+                return;
+            }
+
+            AddErrorIfEmpty(attack.attackAnim, $"{label}.attackAnim");
+            AddErrorIfEmpty(attack.endAnim, $"{label}.endAnim");
+        }
+
+        void ValidateSkillData(SkillData skill, string label)
+        {
+            if (skill == null)
+            {
+                AddError($"{label} is missing.");
+                return;
+            }
+
+            AddErrorIfEmpty(skill.skillAnim, $"{label}.skillAnim");
+            AddErrorIfEmpty(skill.endAnim, $"{label}.endAnim");
+
+            if (skill.hitBoxSlotIndex < 0)
+                AddError($"{label}.hitBoxSlotIndex is invalid.");
+        }
+
+        void ValidateUltimateData(UltimateData ult, string label)
+        {
+            if (ult == null)
+            {
+                AddError($"{label} is missing.");
+                return;
+            }
+
+            AddErrorIfEmpty(ult.ultStartAnim, $"{label}.ultStartAnim");
+            AddErrorIfEmpty(ult.ultHitAnim, $"{label}.ultHitAnim");
+            AddErrorIfEmpty(ult.ultEndAnim, $"{label}.ultEndAnim");
+        }
+
         if (preset.basePrefab == null)
             AddError("Base Prefab is missing.");
 
@@ -72,6 +118,62 @@ public class CharacterBuildPipeline : MonoBehaviour
                 AddError($"Skill HitBox Slot {i} is missing.");
         }
 
+        CharacterData data = preset.characterData;
+
+        if (data != null)
+        {
+            AddErrorIfEmpty(data.idleAnim, "CharacterData.idleAnim");
+            AddErrorIfEmpty(data.walkStartAnim, "CharacterData.walkStartAnim");
+            AddErrorIfEmpty(data.walkLoopAnim, "CharacterData.walkLoopAnim");
+            AddErrorIfEmpty(data.walkEndAnim, "CharacterData.walkEndAnim");
+            AddErrorIfEmpty(data.runLoopAnim, "CharacterData.runLoopAnim");
+            AddErrorIfEmpty(data.runEndAnim, "CharacterData.runEndAnim");
+
+            AddErrorIfEmpty(data.hitLightFrontAnim, "CharacterData.hitLightFrontAnim");
+            AddErrorIfEmpty(data.hitHeavyFrontAnim, "CharacterData.hitHeavyFrontAnim");
+            AddErrorIfEmpty(data.dodgeFrontAnim, "CharacterData.dodgeFrontAnim");
+            AddErrorIfEmpty(data.dodgeCounterStartAnim, "CharacterData.dodgeCounterStartAnim");
+            AddErrorIfEmpty(data.dodgeCounterEndAnim, "CharacterData.dodgeCounterEndAnim");
+
+            AddErrorIfEmpty(data.parrySupportStartAnim, "CharacterData.parrySupportStartAnim");
+            AddErrorIfEmpty(data.parrySupportLightAnim, "CharacterData.parrySupportLightAnim");
+            AddErrorIfEmpty(data.parrySupportHeavyAnim, "CharacterData.parrySupportHeavyAnim");
+
+            if (data.normalCombo != null && data.normalCombo.Length != preset.normalComboCount)
+                AddError($"CharacterData.normalCombo count mismatch. Expected {preset.normalComboCount}, got {data.normalCombo.Length}.");
+            else
+            {
+                for (int i = 0; i < data.normalCombo.Length; i++)
+                {
+                    ValidateAttackData(data.normalCombo[i], $"CharacterData.normalCombo[{i}]");
+                }
+            }
+
+            if (preset.createNormalSkillBranch)
+            {
+                if (data.normalSkillBranch == null)
+                    AddError("CharacterData.normalSkillBranch is missing.");
+                else
+                    ValidateSkillData(data.normalSkillBranch, "CharacterData.normalSkillBranch");
+            }
+
+            if (preset.createEnhancedSkillBranch)
+            {
+                if (data.enhancedSkillBranch == null)
+                    AddError("CharacterData.enhancedSkillBranch is missing.");
+                else
+                    ValidateSkillData(data.enhancedSkillBranch, "CharacterData.enhancedSkillBranch");
+            }
+
+            if (preset.createUltimateData)
+            {
+                if (data.ultimateData == null)
+                    AddError("CharacterData.ultimateData is missing.");
+                else
+                    ValidateUltimateData(data.ultimateData, "CharacterData.ultimateData");
+            }
+        }
+
         if (!result.HasError)
             AddInfo($"'{preset.characterName}' preset validation passed.");
 
@@ -92,7 +194,7 @@ public class CharacterBuildPipeline : MonoBehaviour
             return;
         }
 
-        // basePrefab º¹Á¦
+        // basePrefab ë³µì œ
         GameObject instance = (GameObject)PrefabUtility.InstantiatePrefab(preset.basePrefab);
         instance.name = preset.characterName;
 
@@ -110,19 +212,19 @@ public class CharacterBuildPipeline : MonoBehaviour
             return;
         }
 
-        // model ±³Ã¼
+        // model êµì²´
         foreach (Transform child in modelRoot)
             DestroyImmediate(child.gameObject);
 
         GameObject newModel = (GameObject)PrefabUtility.InstantiatePrefab(preset.modelPrefab);
         newModel.transform.SetParent(modelRoot, false);
 
-        // ¸ðµ¨ÀÇ transform ÃÊ±âÈ­
+        // ëª¨ë¸ì˜ transform ì´ˆê¸°í™”
         newModel.transform.localPosition = Vector3.zero;
         newModel.transform.localRotation = Quaternion.identity;
         newModel.transform.localScale = Vector3.one;
 
-        // ¿¬°á
+        // ì—°ê²°
         SerializedObject playerSO = new SerializedObject(player);
         SerializedProperty characterDataProp = playerSO.FindProperty("characterData");
         characterDataProp.objectReferenceValue = preset.characterData;
@@ -130,7 +232,7 @@ public class CharacterBuildPipeline : MonoBehaviour
 
         animator.runtimeAnimatorController = preset.animatorController;
 
-        // ÀúÀå Æú´õ °æ·Î °è»ê ¹× »ý¼º
+        // ì €ìž¥ í´ë” ê²½ë¡œ ê³„ì‚° ë° ìƒì„±
         string folderPath = ResolveOutputFolder(preset);
         if (string.IsNullOrWhiteSpace(folderPath))
         {
@@ -141,14 +243,14 @@ public class CharacterBuildPipeline : MonoBehaviour
         EnsureFolderExists(folderPath);
 
 
-        // ÃÖÁ¾ ÇÁ¸®ÆÕ ÀúÀå °æ·Î »ý¼º ÈÄ ÀúÀå
+        // ìµœì¢… í”„ë¦¬íŒ¹ ì €ìž¥ ê²½ë¡œ ìƒì„± í›„ ì €ìž¥
         string prefabPath = folderPath + "/" + preset.characterName + ".prefab";
         PrefabUtility.SaveAsPrefabAsset(instance, prefabPath);
 
-        // ÀÓ½Ã ÀÎ½ºÅÏ½º »èÁ¦
+        // ìž„ì‹œ ì¸ìŠ¤í„´ìŠ¤ ì‚­ì œ
         DestroyImmediate(instance);
 
-        // ¾Ö¼Â µ¥ÀÌÅÍº£ÀÌ½º ÀúÀå ¹× »õ·Î°íÄ§
+        // ì• ì…‹ ë°ì´í„°ë² ì´ìŠ¤ ì €ìž¥ ë° ìƒˆë¡œê³ ì¹¨
         AssetDatabase.SaveAssets();
         AssetDatabase.Refresh();
     }
@@ -174,7 +276,7 @@ public class CharacterBuildPipeline : MonoBehaviour
             return;
 
         string[] parts = folderPath.Split('/');
-        string currentPath = parts[0]; // ½ÃÀÛÁ¡Àº Ç×»ó "Assets"
+        string currentPath = parts[0]; // ì‹œìž‘ì ì€ í•­ìƒ "Assets"
 
         for (int i = 1; i < parts.Length; i++)
         {
@@ -199,7 +301,8 @@ public class CharacterBuildPipeline : MonoBehaviour
 
         if (preset.characterData != null)
         {
-            Debug.LogWarning("CharacterData is already assigned. Clear it first if you want to generate a new pack.");
+            Debug.LogWarning("CharacterData is already assigned. Clear it fi" +
+                "rst if you want to generate a new pack.");
             return;
         }
 
@@ -246,7 +349,7 @@ public class CharacterBuildPipeline : MonoBehaviour
 
         preset.characterData = characterData;
 
-        // ¿¡¼Â ¹Ù²î¾úÀ¸´Ï ÀúÀå ´ë»óÀ¸·Î Ç¥½Ã
+        // ì—ì…‹ ë°”ë€Œì—ˆìœ¼ë‹ˆ ì €ìž¥ ëŒ€ìƒìœ¼ë¡œ í‘œì‹œ
         EditorUtility.SetDirty(characterData);
         EditorUtility.SetDirty(statData);
         EditorUtility.SetDirty(preset);
@@ -255,6 +358,348 @@ public class CharacterBuildPipeline : MonoBehaviour
         AssetDatabase.Refresh();
 
         Debug.Log($"Data Pack created for '{preset.characterName}'.");
+    }
+
+    public static void AutoConfigure(CharacterBuildPreset preset)
+    {
+        if(preset == null)
+        {
+            Debug.LogError("Preset is null.");
+            return;
+        }
+
+        if(string.IsNullOrWhiteSpace(preset.animationFolderPath))
+        {
+            Debug.LogError("Animation folder path is missing.");
+            return;
+        }
+
+        if(!preset.animationFolderPath.StartsWith("Assets"))
+        {
+            Debug.LogError("Animation folder path must start with 'Assets'.");
+            return;
+        }
+
+        if (!AssetDatabase.IsValidFolder(preset.animationFolderPath))
+        {
+            Debug.LogError($"Animation folder does not exist: {preset.animationFolderPath}");
+            return;
+        }
+
+        Debug.Log($"Auto Configure: {preset.characterName}");
+        Debug.Log($"Animation folder: {preset.animationFolderPath}");
+
+        string[] clipGuids = AssetDatabase.FindAssets(
+            "t:AnimationClip",
+            new[] {preset.animationFolderPath});
+
+        if(clipGuids.Length == 0)
+        {
+            Debug.LogError($"No AnimationClip found in folder: {preset.animationFolderPath}");
+            return;
+        }
+
+        Debug.Log($"Found clips: {clipGuids.Length}");
+
+        List<AnimationClip> clips = new List<AnimationClip>();
+
+        for(int i = 0; i < clipGuids.Length; i++)
+        {
+            string clipPath = AssetDatabase.GUIDToAssetPath(clipGuids[i]);
+            AnimationClip clip = AssetDatabase.LoadAssetAtPath<AnimationClip>(clipPath);
+
+            if (clip == null)
+                continue;
+
+            clips.Add(clip);
+        }
+
+        if(clips.Count == 0)
+        {
+            Debug.LogError($"AnimationClip load failed: {preset.animationFolderPath}");
+            return;
+        }
+
+        Debug.Log($"Loaded clips: {clips.Count}");
+
+        AnimationClip idleClip = FindClipContains(clips, "Idle_Loop");
+        AnimationClip walkStartClip = FindClipContains(clips, "Walk_Start");
+        AnimationClip walkLoopClip = FindClipContains(clips, "Walk_Loop");
+        AnimationClip walkEndClip = FindClipContains(clips, "Walk_End");
+        AnimationClip runLoopClip = FindClipContains(clips, "Run_Loop");
+        AnimationClip runEndClip = FindClipContains(clips, "Run_End");
+        AnimationClip hitLightClip = FindClipContains(clips, "Hit_L");
+        AnimationClip hitHeavyClip = FindClipContains(clips, "Hit_H");
+        AnimationClip dodgeFrontClip = FindClipContains(clips, "Evade_Front");
+        AnimationClip dodgeCounterStartClip = FindClipContainsExclude(clips, "Attack_Counter", "_End");
+        AnimationClip dodgeCounterEndClip = FindClipContainsAll(clips, "Attack_Counter", "_End");
+        AnimationClip parryLightClip = FindClipContains(clips, "ParryAid_L");
+        AnimationClip parryHeavyClip = FindClipContains(clips, "ParryAid_H");
+        AnimationClip parryStartClip = FindClipContains(clips, "ParryAid_Start");
+
+        Debug.Log($"Idle = {(idleClip != null ? idleClip.name : "null")}");
+        Debug.Log($"WalkStart = {(walkStartClip != null ? walkStartClip.name : "null")}");
+        Debug.Log($"WalkLoop = {(walkLoopClip != null ? walkLoopClip.name : "null")}");
+        Debug.Log($"WalkEnd = {(walkEndClip != null ? walkEndClip.name : "null")}");
+        Debug.Log($"RunLoop = {(runLoopClip != null ? runLoopClip.name : "null")}");
+        Debug.Log($"RunEnd = {(runEndClip != null ? runEndClip.name : "null")}");
+        Debug.Log($"HitLight = {(hitLightClip != null ? hitLightClip.name : "null")}");
+        Debug.Log($"HitHeavy = {(hitHeavyClip != null ? hitHeavyClip.name : "null")}");
+        Debug.Log($"DodgeFront = {(dodgeFrontClip != null ? dodgeFrontClip.name : "null")}");
+        Debug.Log($"CounterStart = {(dodgeCounterStartClip != null ? dodgeCounterStartClip.name : "null")}");
+        Debug.Log($"CounterEnd = {(dodgeCounterEndClip != null ? dodgeCounterEndClip.name : "null")}");
+        Debug.Log($"ParryLight = {(parryLightClip != null ? parryLightClip.name : "null")}");
+        Debug.Log($"ParryHeavy = {(parryHeavyClip != null ? parryHeavyClip.name : "null")}");
+        Debug.Log($"ParryStart = {(parryStartClip != null ? parryStartClip.name : "null")}");
+
+
+        const bool verboseClipListLog = false;
+
+        if (verboseClipListLog)
+        {
+            for (int i = 0; i < clips.Count; i++)
+            {
+                Debug.Log($"Clip[{i}] = {clips[i].name}");
+            }
+        }
+
+        if (preset.characterData == null)
+        {
+            Debug.LogError("CharacterData is missing.");
+            return;
+        }
+
+        CharacterData data = preset.characterData;
+
+        data.idleAnim = idleClip != null ? idleClip.name : string.Empty;
+        data.walkStartAnim = walkStartClip != null ? walkStartClip.name : string.Empty;
+        data.walkLoopAnim = walkLoopClip != null ? walkLoopClip.name : string.Empty;
+        data.walkEndAnim = walkEndClip != null ? walkEndClip.name : string.Empty;
+        data.runLoopAnim = runLoopClip != null ? runLoopClip.name : string.Empty;
+        data.runEndAnim = runEndClip != null ? runEndClip.name : string.Empty;
+        data.hitLightFrontAnim = hitLightClip != null ? hitLightClip.name : string.Empty;
+        data.hitHeavyFrontAnim = hitHeavyClip != null ? hitHeavyClip.name : string.Empty;
+        data.dodgeFrontAnim = dodgeFrontClip != null ? dodgeFrontClip.name : string.Empty;
+        data.dodgeCounterStartAnim = dodgeCounterStartClip != null ? dodgeCounterStartClip.name : string.Empty;
+        data.dodgeCounterEndAnim = dodgeCounterEndClip != null ? dodgeCounterEndClip.name : string.Empty;
+        data.parrySupportLightAnim = parryLightClip != null ? parryLightClip.name : string.Empty;
+        data.parrySupportHeavyAnim = parryHeavyClip != null ? parryHeavyClip.name : string.Empty;
+        data.parrySupportStartAnim = parryStartClip != null ? parryStartClip.name : string.Empty;
+
+        // ê¸°ë³¸ ê³µê²© ìžë™ ë°°ì •
+        if (data.normalCombo != null)
+        {
+            for (int i = 0; i < data.normalCombo.Length; i++)
+            {
+                AttackData attack = data.normalCombo[i];
+
+                if (attack == null)
+                    continue;
+
+                string comboToken = $"Attack_Normal_{i + 1:00}_01";
+
+                AnimationClip comboClip = FindClipContainsExclude(clips, comboToken, "_End");
+                AnimationClip comboEndClip = FindClipContainsAll(clips, comboToken, "_End");
+
+                attack.attackAnim = comboClip != null ? comboClip.name : string.Empty;
+                attack.endAnim = comboEndClip != null ? comboEndClip.name : string.Empty;
+
+                EditorUtility.SetDirty(attack);
+
+                Debug.Log($"NormalCombo[{i}] = {attack.attackAnim} / {attack.endAnim}");
+            }
+        }
+
+        // ë…¸ë§ ìŠ¤í‚¬ ìžë™ ë°°ì •
+        if (data.normalSkillBranch != null)
+        {
+            AnimationClip normalSkillClip = FindClipContainsExclude(clips, preset.normalSkillToken, "_End");
+            AnimationClip normalSkillEndClip = FindClipContainsAll(clips, preset.normalSkillToken, "_End");
+
+            data.normalSkillBranch.skillAnim = normalSkillClip != null ? normalSkillClip.name : string.Empty;
+            data.normalSkillBranch.endAnim = normalSkillEndClip != null ? normalSkillEndClip.name : string.Empty;
+
+            EditorUtility.SetDirty(data.normalSkillBranch);
+
+            Debug.Log($"NormalSkill = {data.normalSkillBranch.skillAnim} / {data.normalSkillBranch.endAnim}");
+        }
+
+        if (data.normalSkillBranch != null)
+        {
+            data.normalSkillBranch.hitBoxSlotIndex = 1;
+            EditorUtility.SetDirty(data.normalSkillBranch);
+
+            Debug.Log($"NormalSkill HitBox Slot = {data.normalSkillBranch.hitBoxSlotIndex}");
+        }
+
+        // ê°•í™” ìŠ¤í‚¬ ìžë™ ë°°ì •
+        if (data.enhancedSkillBranch != null)
+        {
+            AnimationClip enhancedSkillClip = FindClipContainsExclude(clips, preset.enhancedSkillToken, "_End");
+            AnimationClip enhancedSkillEndClip = FindClipContainsAll(clips, preset.enhancedSkillToken, "_End");
+
+            data.enhancedSkillBranch.skillAnim = enhancedSkillClip != null ? enhancedSkillClip.name : string.Empty;
+            data.enhancedSkillBranch.endAnim = enhancedSkillEndClip != null ? enhancedSkillEndClip.name : string.Empty;
+
+            EditorUtility.SetDirty(data.enhancedSkillBranch);
+
+            Debug.Log($"EnhancedSkill = {data.enhancedSkillBranch.skillAnim} / {data.enhancedSkillBranch.endAnim}");
+        }
+
+        if (data.enhancedSkillBranch != null)
+        {
+            data.enhancedSkillBranch.hitBoxSlotIndex = 2;
+            EditorUtility.SetDirty(data.enhancedSkillBranch);
+
+            Debug.Log($"EnhancedSkill HitBox Slot = {data.enhancedSkillBranch.hitBoxSlotIndex}");
+        }
+
+        // ê¶ê·¹ê¸° ìžë™ ë°°ì •
+        if (data.ultimateData != null)
+        {
+            AnimationClip ultStartClip = FindClipContains(clips, "SwitchIn_Attack_Ex_Start");
+            AnimationClip ultHitClip = FindClipContainsExcludeAll(clips, "SwitchIn_Attack_Ex", "_Start", "_End");
+            AnimationClip ultEndClip = FindClipContainsAll(clips, "SwitchIn_Attack_Ex", "_End");
+
+            data.ultimateData.ultStartAnim = ultStartClip != null ? ultStartClip.name : string.Empty;
+            data.ultimateData.ultHitAnim = ultHitClip != null ? ultHitClip.name : string.Empty;
+            data.ultimateData.ultEndAnim = ultEndClip != null ? ultEndClip.name : string.Empty;
+
+            EditorUtility.SetDirty(data.ultimateData);
+
+            Debug.Log($"Ultimate = {data.ultimateData.ultStartAnim} / {data.ultimateData.ultHitAnim} / {data.ultimateData.ultEndAnim}");
+        }
+
+        EditorUtility.SetDirty(data);
+        AssetDatabase.SaveAssets();
+
+        Debug.Log("CharacterData auto-configured.");
+        Debug.Log($"Normal Combo Count = {(data.normalCombo != null ? data.normalCombo.Length : 0)}");
+    }
+
+    private static AnimationClip FindClipContains(List<AnimationClip> clips, string token)
+    {
+        if (clips == null || clips.Count == 0)
+            return null;
+
+        if (string.IsNullOrWhiteSpace(token))
+            return null;
+
+        for(int i = 0; i < clips.Count; i++)
+        {
+            AnimationClip clip = clips[i];
+
+            if (clip == null)
+                continue;
+
+            if (clip.name.IndexOf(token, System.StringComparison.OrdinalIgnoreCase) >= 0)
+                return clip;
+        }
+
+        return null;
+    }
+
+    private static AnimationClip FindClipContainsExclude(List<AnimationClip> clips, string includeToken, string excludeToken)
+    {
+        if (clips == null || clips.Count == 0)
+            return null;
+
+        if (string.IsNullOrWhiteSpace(includeToken))
+            return null;
+
+        for (int i = 0; i < clips.Count; i++)
+        {
+            AnimationClip clip = clips[i];
+
+            if (clip == null)
+                continue;
+
+            if (clip.name.IndexOf(includeToken, System.StringComparison.OrdinalIgnoreCase) < 0)
+                continue;
+
+            if (!string.IsNullOrWhiteSpace(excludeToken) &&
+                clip.name.IndexOf(excludeToken, System.StringComparison.OrdinalIgnoreCase) >= 0)
+                continue;
+
+            return clip;
+        }
+
+        return null;
+    }
+
+    private static AnimationClip FindClipContainsAll(List<AnimationClip> clips, params string[] tokens)
+    {
+        if (clips == null || clips.Count == 0)
+            return null;
+
+        if (tokens == null || tokens.Length == 0)
+            return null;
+
+        for (int i = 0; i < clips.Count; i++)
+        {
+            AnimationClip clip = clips[i];
+
+            if (clip == null)
+                continue;
+
+            bool matched = true;
+
+            for (int j = 0; j < tokens.Length; j++)
+            {
+                if (string.IsNullOrWhiteSpace(tokens[j]))
+                    continue;
+
+                if (clip.name.IndexOf(tokens[j], System.StringComparison.OrdinalIgnoreCase) < 0)
+                {
+                    matched = false;
+                    break;
+                }
+            }
+
+            if (matched)
+                return clip;
+        }
+
+        return null;
+    }
+
+    private static AnimationClip FindClipContainsExcludeAll(List<AnimationClip> clips, string includeToken, params string[] excludeTokens)
+    {
+        if (clips == null || clips.Count == 0)
+            return null;
+
+        if (string.IsNullOrWhiteSpace(includeToken))
+            return null;
+
+        for (int i = 0; i < clips.Count; i++)
+        {
+            AnimationClip clip = clips[i];
+
+            if (clip == null)
+                continue;
+
+            if (clip.name.IndexOf(includeToken, System.StringComparison.OrdinalIgnoreCase) < 0)
+                continue;
+
+            bool excluded = false;
+
+            for (int j = 0; j < excludeTokens.Length; j++)
+            {
+                if (string.IsNullOrWhiteSpace(excludeTokens[j]))
+                    continue;
+
+                if (clip.name.IndexOf(excludeTokens[j], System.StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    excluded = true;
+                    break;
+                }
+            }
+
+            if (!excluded)
+                return clip;
+        }
+
+        return null;
     }
 
     private static string ResolveDataOutputFolder(CharacterBuildPreset preset)

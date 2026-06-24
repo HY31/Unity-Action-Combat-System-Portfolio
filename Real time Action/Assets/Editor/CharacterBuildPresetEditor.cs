@@ -17,6 +17,9 @@ public class CharacterBuildPresetEditor : Editor
         if (GUILayout.Button("Create Data Pack"))
             CharacterBuildPipeline.CreateDataPack(preset);
 
+        if (GUILayout.Button("Auto Configure"))
+            CharacterBuildPipeline.AutoConfigure(preset);
+
         if (GUILayout.Button("Create Prefab"))
             CharacterBuildPipeline.CreatePrefab(preset);
     }

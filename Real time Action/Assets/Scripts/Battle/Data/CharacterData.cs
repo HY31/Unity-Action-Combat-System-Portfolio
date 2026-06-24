@@ -23,6 +23,7 @@ public class CharacterData : ScriptableObject
 
     [Header("Animation - Combat")]
     public string hitLightFrontAnim;
+    public string hitHeavyFrontAnim;
     public string dodgeFrontAnim;
     public string dodgeCounterStartAnim;
     public string dodgeCounterEndAnim;

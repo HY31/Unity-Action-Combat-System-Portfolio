@@ -37,7 +37,7 @@ public class CharacterBuilderWindow : EditorWindow
         {
             if (Selection.activeObject is CharacterBuildPreset selectedPreset)
             {
-                currentPreset = selectedPreset;
+                SetCurrentPreset(selectedPreset);
                 RefreshSerializedObject();
             }
         }
@@ -47,7 +47,7 @@ public class CharacterBuilderWindow : EditorWindow
         if (currentPreset == null)
         {
             EditorGUILayout.HelpBox(
-                "CharacterBuildPreset ¿¡¼ÂÀ» ¼±ÅÃÇÏ°Å³ª ÀÌ Ã¢¿¡ µå·¡±×ÇØ¼­ ³ÖÀ¸¼¼¿ä.",
+                "CharacterBuildPreset ì—ì…‹ì„ ì„ íƒí•˜ê±°ë‚˜ ì´ ì°½ì— ë“œë˜ê·¸í•´ì„œ ë„£ìœ¼ì„¸ìš”.",
                 MessageType.Info);
             return;
         }
@@ -59,24 +59,38 @@ public class CharacterBuilderWindow : EditorWindow
 
         presetSO.Update();
 
-        DrawSectionLabel("Prefab");
+        EditorGUI.BeginDisabledGroup(true);
+        EditorGUILayout.ObjectField("Current Preset", currentPreset, typeof(CharacterBuildPreset), false);
+        EditorGUI.EndDisabledGroup();
+
+        if (currentPreset != null)
+            EditorGUILayout.LabelField("Preset Path", AssetDatabase.GetAssetPath(currentPreset));
+
         DrawProperty("basePrefab");
         DrawProperty("modelPrefab");
         DrawProperty("animatorController");
         DrawProperty("outputFolderPath");
+        DrawProperty("controllerOutputFolderPath");
 
-        DrawSectionLabel("Identity");
+        DrawProperty("animationFolderPath");
+        DrawProperty("autoAssignDataFromAnimations");
+        DrawProperty("autoGenerateAnimatorController");
+
+        DrawProperty("normalSkillToken");
+        DrawProperty("normalSkillEndToken");
+        DrawProperty("enhancedSkillToken");
+        DrawProperty("enhancedSkillEndToken");
+
         DrawProperty("characterName");
 
-        DrawSectionLabel("Data Pack");
         DrawProperty("dataOutputFolderPath");
         DrawProperty("normalComboCount");
         DrawProperty("createNormalSkillBranch");
         DrawProperty("createEnhancedSkillBranch");
         DrawProperty("createUltimateData");
 
-        DrawSectionLabel("Assigned Data");
         DrawProperty("characterData");
+        DrawProperty("generatedAnimatorController");
 
         if (presetSO.ApplyModifiedProperties())
         {
@@ -88,11 +102,15 @@ public class CharacterBuilderWindow : EditorWindow
         EditorGUILayout.Space();
         EditorGUILayout.BeginHorizontal();
 
+        // ë²„íŠ¼ ëˆ„ë¥´ëŠ” ìˆœì„œëŒ€ë¡œ ë„£ìŒ
         if (GUILayout.Button("Validate"))
             lastValidationResult = CharacterBuildPipeline.ValidatePreset(currentPreset, false);
 
         if (GUILayout.Button("Create Data Pack"))
             CharacterBuildPipeline.CreateDataPack(currentPreset);
+
+        if (GUILayout.Button("Auto Configure"))
+            CharacterBuildPipeline.AutoConfigure(currentPreset);
 
         if (GUILayout.Button("Create Prefab"))
             CharacterBuildPipeline.CreatePrefab(currentPreset);
@@ -126,7 +144,7 @@ public class CharacterBuilderWindow : EditorWindow
             "Create Character Build Preset",
             "New Character Build Preset",
             "asset",
-            "»õ CharacterBuildPreset ¿¡¼ÂÀ» ÀúÀåÇÒ À§Ä¡¸¦ ¼±ÅÃÇÏ¼¼¿ä.",
+            "ìƒˆ CharacterBuildPreset ì—ì…‹ì„ ì €ì¥í•  ìœ„ì¹˜ë¥¼ ì„ íƒí•˜ì„¸ìš”.",
             defaultPresetFolder);
 
         if (string.IsNullOrWhiteSpace(path))
@@ -137,8 +155,7 @@ public class CharacterBuilderWindow : EditorWindow
         AssetDatabase.SaveAssets();
         AssetDatabase.Refresh();
 
-        currentPreset = preset;
-        RefreshSerializedObject();
+        SetCurrentPreset(preset);
 
         Selection.activeObject = preset;
         EditorGUIUtility.PingObject(preset);
@@ -155,7 +172,7 @@ public class CharacterBuilderWindow : EditorWindow
         if (lastValidationResult.HasError)
         {
             EditorGUILayout.HelpBox(
-                $"¿À·ù {lastValidationResult.errors.Count}°³",
+                $"ì˜¤ë¥˜ {lastValidationResult.errors.Count}ê°œ",
                 MessageType.Error);
 
             foreach (string error in lastValidationResult.errors)
@@ -165,12 +182,28 @@ public class CharacterBuilderWindow : EditorWindow
         }
         else
         {
-            EditorGUILayout.HelpBox("°ËÁõ Åë°ú", MessageType.Info);
+            EditorGUILayout.HelpBox("ê²€ì¦ í†µê³¼", MessageType.Info);
 
             foreach (string info in lastValidationResult.infos)
             {
                 EditorGUILayout.HelpBox(info, MessageType.None);
             }
         }
+    }
+
+    private void OnSelectionChange()
+    {
+        if (Selection.activeObject is CharacterBuildPreset selectedPreset)
+        {
+            SetCurrentPreset(selectedPreset);
+        }
+    }
+
+    private void SetCurrentPreset(CharacterBuildPreset preset)
+    {
+        currentPreset = preset;
+        lastValidationResult = null;
+        RefreshSerializedObject();
+        Repaint();
     }
 }
