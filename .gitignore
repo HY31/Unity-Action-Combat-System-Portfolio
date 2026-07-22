@@ -1,0 +1,15 @@
+# This public portfolio repository intentionally tracks source code and documents only.
+*
+!.gitignore
+!.gitattributes
+!README.md
+!Docs/
+!Docs/**
+!Assets/
+!Assets/Scripts/
+!Assets/Scripts/**/
+!Assets/Scripts/**/*.cs
+!Assets/Editor/
+!Assets/Editor/**/
+!Assets/Editor/**/*.cs
+
