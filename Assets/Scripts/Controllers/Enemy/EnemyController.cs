@@ -11,7 +11,7 @@ public class EnemyController : MonoBehaviour
     [SerializeField] private SupportPointManager supportPointManager;
     [SerializeField] private EnemyData enemyData;
     public EnemyData EnemyData => enemyData;
-    
+
     [Header("Stats")]
     [SerializeField] private float currentHp = 100f;
     [SerializeField] private float currentStun = 0f;
@@ -174,7 +174,7 @@ public class EnemyController : MonoBehaviour
                 IsInWarningWindow = false;
                 IsInActiveWindow = false;
                 IsInReactionWindow = false;
-                attackHitBox.SetActive(false);  
+                attackHitBox.SetActive(false);
                 currentAttack = null;
 
                 phase = EnemyAttackPhase.None;
