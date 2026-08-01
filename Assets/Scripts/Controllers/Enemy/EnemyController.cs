@@ -66,6 +66,8 @@ public class EnemyController : MonoBehaviour
 
     public WarningType CurrentWarningType => currentAttack != null ? currentAttack.warningType : WarningType.None;
 
+    public bool IsAttacking => phase == EnemyAttackPhase.Attack;
+
     public bool IsInWarningWindow { get; private set; }
     public bool IsInActiveWindow { get; private set; }
     public bool IsInReactionWindow { get; private set; }
@@ -110,7 +112,7 @@ public class EnemyController : MonoBehaviour
 
         if (Input.GetKeyDown(triggerKey))
         {
-            StartAttack();
+            TryStartAttack();
         }
 
         if (phase == EnemyAttackPhase.Attack)
@@ -119,17 +121,30 @@ public class EnemyController : MonoBehaviour
         }
     }
 
-    private void StartAttack()
+    public bool TryStartAttack()
     {
-        if (isGroggy) return;
-        if(enemyData == null) return;
+        if (isGroggy || IsAttacking)
+            return false;
 
-        if (enemyData.attackPatterns == null || enemyData.attackPatterns.Length == 0) return;
+        if (enemyData == null || animator == null || attackHitBox == null)
+            return false;
 
-        currentAttack = enemyData.attackPatterns[Random.Range(0, enemyData.attackPatterns.Length)];
+        if (enemyData.attackPatterns == null || enemyData.attackPatterns.Length == 0)
+            return false;
+
+        EnemyAttackData selectedAttack =
+            enemyData.attackPatterns[Random.Range(0, enemyData.attackPatterns.Length)];
+
+        if (selectedAttack == null || string.IsNullOrEmpty(selectedAttack.attackAnim))
+            return false;
+
+        currentAttack = selectedAttack;
         phase = EnemyAttackPhase.Attack;
+
         attackHitBox.SetActive(false);
         animator.CrossFade(currentAttack.attackAnim, 0.05f);
+
+        return true;
     }
 
     private void UpdateAttack(AnimatorStateInfo info)
