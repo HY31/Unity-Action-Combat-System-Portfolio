@@ -69,6 +69,18 @@ public class HitBox : MonoBehaviour
         // 무적 등으로 피격이 거부되면 카메라·히트스톱·자원 보상도 발생시키지 않는다.
         if(hurtBox.TryTakeHit(hitData))
         {
+            Vector3 targetPosition = hurtBox.OwnerRoot != null
+                ? hurtBox.OwnerRoot.position
+                : other.bounds.center;
+            Vector3 sourcePosition = ownerRoot != null
+                ? ownerRoot.position
+                : transform.position;
+            Vector3 hitDirection = targetPosition - sourcePosition;
+            Vector3 impactPoint = other.ClosestPoint(transform.position);
+
+            // 피격이 확정된 순간의 접촉 위치와 공격 속성만 연출 계층으로 전달한다.
+            CombatHitVfx.Play(impactPoint, hitDirection, hitData.resolvedElement);
+
             camController?.Shake();
             HitStop.DoHitStop(0.05f);
 
