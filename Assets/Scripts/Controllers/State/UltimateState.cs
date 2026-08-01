@@ -56,6 +56,7 @@ public class UltimateState : IPlayerState
             attacker = player,
             damageMultiplier = ultData.hitPayload.damageMultiplier,
             impactMultiplier = ultData.hitPayload.impactMultiplier,
+            hitReactionBuildUp = ultData.hitPayload.hitReactionBuildUp,
             resolvedElement = resolvedElement,
             anomalyBuildUp = ultData.hitPayload.anomalyBuildUp,
             canTriggerChainSkill = ultData.hitPayload.canTriggerChainSkill

@@ -209,6 +209,7 @@ public class SkillState : IPlayerState
             attacker = player,
             damageMultiplier = currentSkill.hitPayload.damageMultiplier,
             impactMultiplier = currentSkill.hitPayload.impactMultiplier,
+            hitReactionBuildUp = currentSkill.hitPayload.hitReactionBuildUp,
             resolvedElement = resolvedElement,
             anomalyBuildUp = currentSkill.hitPayload.anomalyBuildUp,
             canTriggerChainSkill = currentSkill.hitPayload.canTriggerChainSkill

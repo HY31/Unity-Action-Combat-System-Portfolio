@@ -18,6 +18,9 @@ public class EnemyController : MonoBehaviour
     [SerializeField] private bool isGroggy;
     [SerializeField] private float groggyTimeRemaining;
 
+    [Header("Hit Reaction")]
+    [SerializeField] private float currentHitReactionGauge = 0f;
+
     [Header("Attributes")]
     [SerializeField] private CombatElement currentAnomalyElement = CombatElement.None;
 
@@ -27,9 +30,9 @@ public class EnemyController : MonoBehaviour
 
     public float CurrentAnomalyGauge => currentAnomalyGauge;
     public CombatElement CurrentAnomalyElement => currentAnomalyElement;
-
     public float CurrentHp => currentHp;
     public float CurrentStun => currentStun;
+    public float CurrentHitReactionGauge => currentHitReactionGauge;
     public bool IsGroggy => isGroggy;
     public float GroggyTimeRemaining => groggyTimeRemaining;
     public float CurrentDamageTakenMultiplier =>
@@ -80,13 +83,14 @@ public class EnemyController : MonoBehaviour
     {
         if (enemyData == null)
         {
-            Debug.LogError("enemy data is invalid");
+            Debug.LogError("적 데이터가 올바르지 않습니다.");
             enabled = false;
             return;
         }
 
         currentHp = enemyData.maxHp;
         currentStun = 0f;
+        currentHitReactionGauge = 0f;
         isGroggy = false;
         groggyTimeRemaining = 0f;
         currentAnomalyGauge = 0f;
@@ -104,6 +108,8 @@ public class EnemyController : MonoBehaviour
     }
     private void Update()
     {
+        UpdateHitReactionGauge();
+
         if (isGroggy)
         {
             UpdateGroggy();
@@ -119,6 +125,34 @@ public class EnemyController : MonoBehaviour
         {
             UpdateAttack(animator.GetCurrentAnimatorStateInfo(0));
         }
+    }
+
+    private void UpdateHitReactionGauge()
+    {
+        if (currentHitReactionGauge <= 0f)
+            return;
+
+        // 강공격이 이어지지 않으면 숨은 경직 게이지가 빠르게 0으로 돌아간다.
+        currentHitReactionGauge = Mathf.MoveTowards(
+            currentHitReactionGauge,
+            0f,
+            enemyData.hitReactionDecayPerSecond * Time.deltaTime);
+    }
+
+    private void AddHitReactionBuildUp(float amount)
+    {
+        if (isGroggy || amount <= 0f)
+            return;
+
+        // 공격에 설정된 경직 누적치를 최대 게이지 범위 안에서 반영한다.
+        currentHitReactionGauge = Mathf.Clamp(
+            currentHitReactionGauge + amount,
+            0f,
+            enemyData.maxHitReactionGauge);
+
+        Debug.Log(
+            $"{name} 경직 게이지 = " +
+            $"{currentHitReactionGauge:F1} / {enemyData.maxHitReactionGauge:F1}");
     }
 
     public bool TryStartAttack()
@@ -252,9 +286,12 @@ public class EnemyController : MonoBehaviour
             currentStun = Mathf.Clamp(currentStun + stunDamage, 0f, enemyData.maxStun);
         }
 
-        Debug.Log($"{name} took {finalDamage:F1} damage / HP {currentHp:F1}");
-        Debug.Log($"{name} gained {stunDamage:F1} stun / Stun {currentStun:F1}");
-        Debug.Log($"{name} element = {hitData.resolvedElement}, anomalyBuildUp = {hitData.anomalyBuildUp}");
+        // 일반 공격은 0을 전달하므로 강공격에 설정된 누적치만 게이지에 반영된다.
+        AddHitReactionBuildUp(hitData.hitReactionBuildUp);
+
+        Debug.Log($"{name} 피해 {finalDamage:F1} / 현재 체력 {currentHp:F1}");
+        Debug.Log($"{name} 그로기 누적 {stunDamage:F1} / 현재 그로기 수치 {currentStun:F1}");
+        Debug.Log($"{name} 속성 = {hitData.resolvedElement}, 이상 누적치 = {hitData.anomalyBuildUp}");
 
         if (!isGroggy && enemyData.maxStun > 0f && currentStun >= enemyData.maxStun)
             EnterGroggy(hitData.attacker, hitData.canTriggerChainSkill);

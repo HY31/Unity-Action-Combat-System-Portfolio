@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 
 public struct CombatHitData
 {
@@ -6,6 +6,10 @@ public struct CombatHitData
     public PlayerController attacker;
     public float damageMultiplier;
     public float impactMultiplier;
+
+    // 공격 에셋에서 확정된 경직 누적치를 실제 충돌 시점까지 전달한다.
+    public float hitReactionBuildUp;
+
     public CombatElement resolvedElement;
     public float anomalyBuildUp;
     public bool canTriggerChainSkill;

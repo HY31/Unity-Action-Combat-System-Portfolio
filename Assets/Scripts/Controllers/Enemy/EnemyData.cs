@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 
 [CreateAssetMenu(menuName = "Combat(Enemy)/Enemy Data")]
 public class EnemyData : ScriptableObject
@@ -18,6 +18,14 @@ public class EnemyData : ScriptableObject
     [Range(0f, 1f)] public float stunResistance = 0f;
     public float groggyDuration = 3f;
     [Min(1f)] public float groggyDamageMultiplier = 1.5f;
+
+    [Header("Hit Reaction")]
+    // 강공격이 짧은 시간 안에 누적될 때만 경직되도록 감소형 숨은 게이지를 설정한다.
+    [Min(0f)] public float maxHitReactionGauge = 100f;
+    [Min(0f)] public float hitReactionThreshold = 80f;
+    [Min(0f)] public float hitReactionResetValue = 50f;
+    [Min(0f)] public float hitReactionDecayPerSecond = 45f;
+    [Min(0f)] public float hitReactionDuration = 0.45f;
 
     [Header("Anomaly")]
     public float anomalyThreshold = 100f;
