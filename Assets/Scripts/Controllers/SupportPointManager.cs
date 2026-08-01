@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 
 public class SupportPointManager : MonoBehaviour
 {
@@ -12,7 +12,7 @@ public class SupportPointManager : MonoBehaviour
         
     }
 
-    // Update is called once per frame
+    // 매 프레임 지원 포인트 UI를 현재 값과 동기화한다.
     void Update()
     {
         

@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 
 [CreateAssetMenu(menuName = "Combat/Character Data")]
 public class CharacterData : ScriptableObject

@@ -39,9 +39,9 @@ public class LocomotionState : IPlayerState
 
     public void Update()
     {
-        Debug.Log($"speed={player.CurrentSpeed}");
+        Debug.Log($"현재 속도 = {player.CurrentSpeed}");
 
-        // 임시로 Locomotion State에서만 에너지 자동회복
+        // 임시로 이동 상태에서만 에너지가 자동 회복된다.
         player.RecoveryEnergyOverTime(player.EnergyRecoveryRate);
 
         Vector3 inputMoveDir = player.GetCameraRelativeMoveDirection();

@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 
 /// <summary>
 /// 단일 PlayerController의 런타임 자원을 플레이어 상태 UI에 전달한다.

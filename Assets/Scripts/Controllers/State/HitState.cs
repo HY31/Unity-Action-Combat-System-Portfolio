@@ -13,7 +13,7 @@ public class HitState : IPlayerState, IUltimateBlockingState
 
     public void Enter()
     {
-        Debug.Log("Hit Enter");
+        Debug.Log("피격 상태 진입");
         timer = hitDuration;
         player.Animator.CrossFade(player.CharacterData.hitLightFrontAnim, 0.05f);
     }
@@ -28,7 +28,7 @@ public class HitState : IPlayerState, IUltimateBlockingState
     }
     public void Exit()
     {
-        Debug.Log("Hit Exit");
+        Debug.Log("피격 상태 종료");
     }
 
     #region Handle

@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 
 public class UltimateState : IPlayerState
 {
@@ -29,7 +29,7 @@ public class UltimateState : IPlayerState
     {
         if (player.CharacterData == null || player.CharacterData.ultimateData == null)
         {
-            Debug.LogError("ultState : character data is missing.");
+            Debug.LogError("궁극기 상태: 캐릭터 데이터가 없습니다.");
             player.ChangeState(player.LocomotionState);
             return;
         }
@@ -74,7 +74,7 @@ public class UltimateState : IPlayerState
         player.SetInvincible(true);
         phase = UltimatePhase.Start;
         player.Animator.CrossFade(ultData.ultStartAnim, 0.05f);
-        Debug.Log("Ultimate Enter");
+        Debug.Log("궁극기 상태 진입");
     }
 
     public void Update()
@@ -106,7 +106,7 @@ public class UltimateState : IPlayerState
         if (ultAssistDirection.sqrMagnitude > 0.0001f)
             player.RotateToward(ultAssistDirection, ultData.autoAimRotationMultiplier);
 
-        // 컷신 뒤에 순간 접근하지 않도록 Start 단계에서 타겟 방향 접근을 끝낸다.
+        // 컷신 뒤에 순간 접근하지 않도록 시작 단계에서 대상 방향 접근을 끝낸다.
         if (t >= ultData.moveStart && t < ultData.moveEnd)
         {
             if (ultAssistDirection.sqrMagnitude > 0.0001f && assistTarget != null)
@@ -117,7 +117,7 @@ public class UltimateState : IPlayerState
             Vector3 forwardMove = moveDirection * ultData.forwardMoveSpeed;
             player.Controller.Move(forwardMove * Time.deltaTime);
         }
-        // TODO: 컷신이 연결되면 Start 구간의 접근 이동과 함께 끝나도록 동기화한다.
+        // TODO: 컷신이 연결되면 시작 구간의 접근 이동과 함께 끝나도록 동기화한다.
 
         if (t >= 1f)
         {
@@ -190,7 +190,7 @@ public class UltimateState : IPlayerState
             return;
         
         player.UltHitBox.SetActive(false);
-        Debug.Log("Ultimate Exit");
+        Debug.Log("궁극기 상태 종료");
     }
 
     #region Handle

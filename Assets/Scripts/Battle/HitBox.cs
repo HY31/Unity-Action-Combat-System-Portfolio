@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 
 public enum DecibelRewardType
 {
@@ -55,7 +55,7 @@ public class HitBox : MonoBehaviour
         Debug.Log(other);
 
         HurtBox hurtBox = other.GetComponent<HurtBox>();
-        Debug.Log($"hurtBox = {hurtBox}");
+        Debug.Log($"피격 판정 영역 = {hurtBox}");
 
         if (hurtBox == null)
             hurtBox = other.GetComponentInParent<HurtBox>();

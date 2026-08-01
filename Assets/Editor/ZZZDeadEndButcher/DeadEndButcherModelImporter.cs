@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
@@ -60,13 +60,13 @@ internal static class DeadEndButcherModelImportTools
         if (reimportedPaths.Count == 0)
         {
             Debug.LogWarning(
-                $"No FBX models were found below {DeadEndButcherModelImporter.ModelRoot}.");
+                $"{DeadEndButcherModelImporter.ModelRoot} 아래에서 FBX 모델을 찾지 못했습니다.");
             return;
         }
 
         Debug.Log(
-            $"Reimported {reimportedPaths.Count} Dead End Butcher model(s) " +
-            $"at scale {DeadEndButcherModelImporter.ImportScale}:\n" +
+            $"도살자 모델 {reimportedPaths.Count}개를 " +
+            $"크기 {DeadEndButcherModelImporter.ImportScale}으로 다시 가져왔습니다:\n" +
             string.Join("\n", reimportedPaths));
     }
 

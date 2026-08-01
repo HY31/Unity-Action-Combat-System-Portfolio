@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 
 public enum SupportType
 {
@@ -21,7 +21,7 @@ public class PartyManager : MonoBehaviour
     {
         if (partyMembers == null || partyMembers.Length <= 0)
         {
-            Debug.LogError("partyMembers error");
+            Debug.LogError("파티 멤버 배열이 올바르지 않습니다.");
             enabled = false;
             return;
         }
@@ -30,7 +30,7 @@ public class PartyManager : MonoBehaviour
         {
             if (partyMembers[i] == null)
             {
-                Debug.LogError("partyMember is not available");
+                Debug.LogError("사용할 수 없는 파티 멤버가 있습니다.");
                 enabled = false;
                 return;
             }
@@ -47,7 +47,7 @@ public class PartyManager : MonoBehaviour
     {
         if (cameraController == null)
         {
-            Debug.LogError("CameraController is missing.");
+            Debug.LogError("카메라 컨트롤러가 없습니다.");
             return;
         }
 
@@ -107,7 +107,7 @@ public class PartyManager : MonoBehaviour
 
         if (cameraController == null || switchedPlayer.CameraFollowTarget == null)
         {
-            Debug.LogError("Camera target setting fail");
+            Debug.LogError("카메라 대상 설정에 실패했습니다.");
             return null;
         }
 
@@ -211,7 +211,7 @@ public class PartyManager : MonoBehaviour
     {
         if(enemy == null) return SupportType.Normal;
 
-        // Yellow는 포인트가 있을 때만 패링이며, 부족하면 Red와 같은 극한 회피 지원이 된다.
+        // 노란색 공격은 포인트가 있을 때만 패링하며, 부족하면 빨간색 공격과 같은 극한 회피 지원이 된다.
         if(enemy.CurrentWarningType == WarningType.Yellow
             && supportPointManager != null
             && supportPointManager.HasEnoughSupportPoint(1))

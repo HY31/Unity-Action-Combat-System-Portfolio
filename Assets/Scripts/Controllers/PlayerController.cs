@@ -1,6 +1,7 @@
+﻿using TMPro;
 using UnityEngine;
 using UnityEngine.InputSystem;
-using TMPro;
+using static IPlayerState;
 
 
 public class PlayerController : MonoBehaviour
@@ -132,7 +133,7 @@ public class PlayerController : MonoBehaviour
 
         if (characterData == null)
         {
-            Debug.LogError("CharacterData is missing", this);
+            Debug.LogError("캐릭터 데이터가 없습니다.", this);
             enabled = false;
             return;
         }
@@ -420,7 +421,7 @@ public class PlayerController : MonoBehaviour
     public void OnMove(InputValue value)
     {
         MoveInput = value.Get<Vector2>();
-        Debug.Log($"{name} MoveInput = {MoveInput}");
+        Debug.Log($"{name} 이동 입력 = {MoveInput}");
     }
 
     public void OnAttack(InputValue value)
@@ -490,7 +491,7 @@ public class PlayerController : MonoBehaviour
 
         if (partyManager == null)
         {
-            Debug.LogWarning("PartyManager is not assigned.");
+            Debug.LogWarning("파티 관리자가 할당되지 않았습니다.");
             return;
         }
 
@@ -504,7 +505,7 @@ public class PlayerController : MonoBehaviour
 
         if (partyManager == null)
         {
-            Debug.LogWarning("PartyManager is not assigned.");
+            Debug.LogWarning("파티 관리자가 할당되지 않았습니다.");
             return;
         }
 

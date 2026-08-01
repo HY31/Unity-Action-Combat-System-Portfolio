@@ -1,4 +1,4 @@
-public enum CombatElement
+﻿public enum CombatElement
 {
     None,
     Fire,

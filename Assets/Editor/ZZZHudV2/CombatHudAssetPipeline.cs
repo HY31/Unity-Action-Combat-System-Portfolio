@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using UnityEditor;
 using UnityEngine;
@@ -31,7 +31,7 @@ internal sealed class CombatHudTexturePostprocessor : AssetPostprocessor
 }
 
 [InitializeOnLoad]
-// 파티 상태·적 월드 상태·체인 스킬 UI와 확인용 Demo Canvas를 생성한다.
+// 파티 상태·적 월드 상태·체인 스킬 UI와 확인용 데모 캔버스를 생성한다.
 internal static class CombatHudPrefabBuilder
 {
     private const string SpriteRoot = "Assets/Sprites/ZZZHudV2";
@@ -67,7 +67,7 @@ internal static class CombatHudPrefabBuilder
 
         AssetDatabase.SaveAssets();
         AssetDatabase.Refresh();
-        Debug.Log($"ZZZ HUD V2 prefabs are ready in {PrefabRoot}");
+        Debug.Log($"ZZZ HUD V2 프리팹 준비 완료: {PrefabRoot}");
     }
 
     [MenuItem("Tools/ZZZ HUD V2/Ping Demo Canvas")]
@@ -650,7 +650,7 @@ internal static class CombatHudPrefabBuilder
         AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceSynchronousImport);
         sprite = AssetDatabase.LoadAssetAtPath<Sprite>(path);
         if (sprite == null)
-            throw new InvalidOperationException($"Could not import ZZZ HUD V2 sprite: {path}");
+            throw new InvalidOperationException($"ZZZ HUD V2 스프라이트를 가져오지 못했습니다: {path}");
         return sprite;
     }
 

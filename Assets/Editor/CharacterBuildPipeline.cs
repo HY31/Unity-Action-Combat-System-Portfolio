@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
 public class CharacterBuildValidationResult
@@ -32,14 +32,14 @@ public class CharacterBuildPipeline : MonoBehaviour
         void AddErrorIfEmpty(string value, string label)
         {
             if (string.IsNullOrWhiteSpace(value))
-                AddError($"{label} is missing.");
+                AddError($"{label} 값이 없습니다.");
         }
 
         void ValidateAttackData(AttackData attack, string label)
         {
             if (attack == null)
             {
-                AddError($"{label} is missing.");
+                AddError($"{label} 데이터가 없습니다.");
                 return;
             }
 
@@ -51,7 +51,7 @@ public class CharacterBuildPipeline : MonoBehaviour
         {
             if (skill == null)
             {
-                AddError($"{label} is missing.");
+                AddError($"{label} 데이터가 없습니다.");
                 return;
             }
 
@@ -59,14 +59,14 @@ public class CharacterBuildPipeline : MonoBehaviour
             AddErrorIfEmpty(skill.endAnim, $"{label}.endAnim");
 
             if (skill.hitBoxSlotIndex < 0)
-                AddError($"{label}.hitBoxSlotIndex is invalid.");
+                AddError($"{label}.hitBoxSlotIndex 값이 올바르지 않습니다.");
         }
 
         void ValidateUltimateData(UltimateData ult, string label)
         {
             if (ult == null)
             {
-                AddError($"{label} is missing.");
+                AddError($"{label} 데이터가 없습니다.");
                 return;
             }
 
@@ -76,16 +76,16 @@ public class CharacterBuildPipeline : MonoBehaviour
         }
 
         if (preset.basePrefab == null)
-            AddError("Base Prefab is missing.");
+            AddError("기본 프리팹이 없습니다.");
 
         if (preset.modelPrefab == null)
-            AddError("Model Prefab is missing.");
+            AddError("모델 프리팹이 없습니다.");
 
         if (preset.characterData == null)
-            AddError("CharacterData is missing.");
+            AddError("캐릭터 데이터가 없습니다.");
 
         if (preset.animatorController == null)
-            AddError("Animator Controller is missing.");
+            AddError("애니메이터 컨트롤러가 없습니다.");
 
         if (preset.basePrefab == null)
             return result;
@@ -95,27 +95,27 @@ public class CharacterBuildPipeline : MonoBehaviour
         CharacterController controller = preset.basePrefab.GetComponent<CharacterController>();
 
         if (player == null)
-            AddError("Base Prefab is missing PlayerController.");
+            AddError("기본 프리팹에 PlayerController가 없습니다.");
 
         if (animator == null)
-            AddError("Base Prefab is missing Animator.");
+            AddError("기본 프리팹에 Animator가 없습니다.");
 
         if (controller == null)
-            AddError("Base Prefab is missing CharacterController.");
+            AddError("기본 프리팹에 CharacterController가 없습니다.");
 
         if (player == null)
             return result;
 
         if (player.CameraFollowTarget == null)
-            AddError("PlayerController is missing CameraFollowTarget.");
+            AddError("PlayerController에 CameraFollowTarget이 없습니다.");
 
         if (player.UltHitBox == null)
-            AddError("PlayerController is missing UltHitBox.");
+            AddError("PlayerController에 UltHitBox가 없습니다.");
 
         for (int i = 0; i < player.SkillHitBoxSlotCount; i++)
         {
             if (player.GetSkillHitBox(i) == null)
-                AddError($"Skill HitBox Slot {i} is missing.");
+                AddError($"스킬 히트박스 슬롯 {i}이(가) 없습니다.");
         }
 
         CharacterData data = preset.characterData;
@@ -140,7 +140,7 @@ public class CharacterBuildPipeline : MonoBehaviour
             AddErrorIfEmpty(data.parrySupportHeavyAnim, "CharacterData.parrySupportHeavyAnim");
 
             if (data.normalCombo != null && data.normalCombo.Length != preset.normalComboCount)
-                AddError($"CharacterData.normalCombo count mismatch. Expected {preset.normalComboCount}, got {data.normalCombo.Length}.");
+                AddError($"CharacterData.normalCombo 개수가 맞지 않습니다. 예상값: {preset.normalComboCount}, 실제값: {data.normalCombo.Length}.");
             else
             {
                 for (int i = 0; i < data.normalCombo.Length; i++)
@@ -152,7 +152,7 @@ public class CharacterBuildPipeline : MonoBehaviour
             if (preset.createNormalSkillBranch)
             {
                 if (data.normalSkillBranch == null)
-                    AddError("CharacterData.normalSkillBranch is missing.");
+                    AddError("CharacterData.normalSkillBranch가 없습니다.");
                 else
                     ValidateSkillData(data.normalSkillBranch, "CharacterData.normalSkillBranch");
             }
@@ -160,7 +160,7 @@ public class CharacterBuildPipeline : MonoBehaviour
             if (preset.createEnhancedSkillBranch)
             {
                 if (data.enhancedSkillBranch == null)
-                    AddError("CharacterData.enhancedSkillBranch is missing.");
+                    AddError("CharacterData.enhancedSkillBranch가 없습니다.");
                 else
                     ValidateSkillData(data.enhancedSkillBranch, "CharacterData.enhancedSkillBranch");
             }
@@ -168,21 +168,21 @@ public class CharacterBuildPipeline : MonoBehaviour
             if (preset.createUltimateData)
             {
                 if (data.ultimateData == null)
-                    AddError("CharacterData.ultimateData is missing.");
+                    AddError("CharacterData.ultimateData가 없습니다.");
                 else
                     ValidateUltimateData(data.ultimateData, "CharacterData.ultimateData");
             }
         }
 
         if (!result.HasError)
-            AddInfo($"'{preset.characterName}' preset validation passed.");
+            AddInfo($"'{preset.characterName}' 프리셋 검증을 통과했습니다.");
 
         return result;
     }
 
     public static void CreatePrefab(CharacterBuildPreset preset)
     {
-        Debug.Log($"Create Prefab: {preset.characterName}");
+        Debug.Log($"프리팹 생성: {preset.characterName}");
 
         if (preset.basePrefab == null
             || preset.modelPrefab == null
@@ -190,11 +190,11 @@ public class CharacterBuildPipeline : MonoBehaviour
             || preset.animatorController == null
             || string.IsNullOrWhiteSpace(preset.characterName))
         {
-            Debug.LogError("Preset is invalid.");
+            Debug.LogError("프리셋이 올바르지 않습니다.");
             return;
         }
 
-        // basePrefab 복제
+        // 기본 프리팹 복제
         GameObject instance = (GameObject)PrefabUtility.InstantiatePrefab(preset.basePrefab);
         instance.name = preset.characterName;
 
@@ -207,19 +207,19 @@ public class CharacterBuildPipeline : MonoBehaviour
             || modelRoot == null
             )
         {
-            Debug.LogError("basePrefab's data is invalid.");
+            Debug.LogError("기본 프리팹의 구성이 올바르지 않습니다.");
             DestroyImmediate(instance);
             return;
         }
 
-        // model 교체
+        // 모델 교체
         foreach (Transform child in modelRoot)
             DestroyImmediate(child.gameObject);
 
         GameObject newModel = (GameObject)PrefabUtility.InstantiatePrefab(preset.modelPrefab);
         newModel.transform.SetParent(modelRoot, false);
 
-        // 모델의 transform 초기화
+        // 모델의 트랜스폼 초기화
         newModel.transform.localPosition = Vector3.zero;
         newModel.transform.localRotation = Quaternion.identity;
         newModel.transform.localScale = Vector3.one;
@@ -263,7 +263,7 @@ public class CharacterBuildPipeline : MonoBehaviour
 
         if (!folderPath.StartsWith("Assets"))
         {
-            Debug.LogError("Output folder path must start with 'Assets'.");
+            Debug.LogError("출력 폴더 경로는 'Assets'로 시작해야 합니다.");
             return null;
         }
 
@@ -295,20 +295,19 @@ public class CharacterBuildPipeline : MonoBehaviour
     {
         if (string.IsNullOrWhiteSpace(preset.characterName))
         {
-            Debug.LogError("Character Name is missing.");
+            Debug.LogError("캐릭터 이름이 없습니다.");
             return;
         }
 
         if (preset.characterData != null)
         {
-            Debug.LogWarning("CharacterData is already assigned. Clear it fi" +
-                "rst if you want to generate a new pack.");
+            Debug.LogWarning("캐릭터 데이터가 이미 할당되어 있습니다. 새 데이터 묶음을 만들려면 기존 할당을 먼저 지우세요.");
             return;
         }
 
         if (preset.normalComboCount < 1)
         {
-            Debug.LogError("Normal Combo Count must be at least 1.");
+            Debug.LogError("일반 콤보 개수는 1 이상이어야 합니다.");
             return;
         }
 
@@ -357,37 +356,37 @@ public class CharacterBuildPipeline : MonoBehaviour
         AssetDatabase.SaveAssets();
         AssetDatabase.Refresh();
 
-        Debug.Log($"Data Pack created for '{preset.characterName}'.");
+        Debug.Log($"'{preset.characterName}'의 데이터 묶음을 생성했습니다.");
     }
 
     public static void AutoConfigure(CharacterBuildPreset preset)
     {
         if(preset == null)
         {
-            Debug.LogError("Preset is null.");
+            Debug.LogError("프리셋이 없습니다.");
             return;
         }
 
         if(string.IsNullOrWhiteSpace(preset.animationFolderPath))
         {
-            Debug.LogError("Animation folder path is missing.");
+            Debug.LogError("애니메이션 폴더 경로가 없습니다.");
             return;
         }
 
         if(!preset.animationFolderPath.StartsWith("Assets"))
         {
-            Debug.LogError("Animation folder path must start with 'Assets'.");
+            Debug.LogError("애니메이션 폴더 경로는 'Assets'로 시작해야 합니다.");
             return;
         }
 
         if (!AssetDatabase.IsValidFolder(preset.animationFolderPath))
         {
-            Debug.LogError($"Animation folder does not exist: {preset.animationFolderPath}");
+            Debug.LogError($"애니메이션 폴더가 존재하지 않습니다: {preset.animationFolderPath}");
             return;
         }
 
-        Debug.Log($"Auto Configure: {preset.characterName}");
-        Debug.Log($"Animation folder: {preset.animationFolderPath}");
+        Debug.Log($"자동 구성: {preset.characterName}");
+        Debug.Log($"애니메이션 폴더: {preset.animationFolderPath}");
 
         string[] clipGuids = AssetDatabase.FindAssets(
             "t:AnimationClip",
@@ -395,11 +394,11 @@ public class CharacterBuildPipeline : MonoBehaviour
 
         if(clipGuids.Length == 0)
         {
-            Debug.LogError($"No AnimationClip found in folder: {preset.animationFolderPath}");
+            Debug.LogError($"폴더에서 애니메이션 클립을 찾지 못했습니다: {preset.animationFolderPath}");
             return;
         }
 
-        Debug.Log($"Found clips: {clipGuids.Length}");
+        Debug.Log($"발견한 클립 수: {clipGuids.Length}");
 
         List<AnimationClip> clips = new List<AnimationClip>();
 
@@ -416,11 +415,11 @@ public class CharacterBuildPipeline : MonoBehaviour
 
         if(clips.Count == 0)
         {
-            Debug.LogError($"AnimationClip load failed: {preset.animationFolderPath}");
+            Debug.LogError($"애니메이션 클립을 불러오지 못했습니다: {preset.animationFolderPath}");
             return;
         }
 
-        Debug.Log($"Loaded clips: {clips.Count}");
+        Debug.Log($"불러온 클립 수: {clips.Count}");
 
         AnimationClip idleClip = FindFirstClip(
             FindClipContains(clips, "Idle_Loop"),
@@ -443,35 +442,35 @@ public class CharacterBuildPipeline : MonoBehaviour
         AnimationClip parryHeavyClip = FindClipContains(clips, "ParryAid_H");
         AnimationClip parryStartClip = FindClipContains(clips, "ParryAid_Start");
 
-        Debug.Log($"Idle = {(idleClip != null ? idleClip.name : "null")}");
-        Debug.Log($"WalkStart = {(walkStartClip != null ? walkStartClip.name : "null")}");
-        Debug.Log($"WalkLoop = {(walkLoopClip != null ? walkLoopClip.name : "null")}");
-        Debug.Log($"WalkEnd = {(walkEndClip != null ? walkEndClip.name : "null")}");
-        Debug.Log($"RunLoop = {(runLoopClip != null ? runLoopClip.name : "null")}");
-        Debug.Log($"RunEnd = {(runEndClip != null ? runEndClip.name : "null")}");
-        Debug.Log($"HitLight = {(hitLightClip != null ? hitLightClip.name : "null")}");
-        Debug.Log($"HitHeavy = {(hitHeavyClip != null ? hitHeavyClip.name : "null")}");
-        Debug.Log($"DodgeFront = {(dodgeFrontClip != null ? dodgeFrontClip.name : "null")}");
-        Debug.Log($"CounterStart = {(dodgeCounterStartClip != null ? dodgeCounterStartClip.name : "null")}");
-        Debug.Log($"CounterEnd = {(dodgeCounterEndClip != null ? dodgeCounterEndClip.name : "null")}");
-        Debug.Log($"ParryLight = {(parryLightClip != null ? parryLightClip.name : "null")}");
-        Debug.Log($"ParryHeavy = {(parryHeavyClip != null ? parryHeavyClip.name : "null")}");
-        Debug.Log($"ParryStart = {(parryStartClip != null ? parryStartClip.name : "null")}");
+        Debug.Log($"대기 = {(idleClip != null ? idleClip.name : "없음")}");
+        Debug.Log($"걷기 시작 = {(walkStartClip != null ? walkStartClip.name : "없음")}");
+        Debug.Log($"걷기 반복 = {(walkLoopClip != null ? walkLoopClip.name : "없음")}");
+        Debug.Log($"걷기 종료 = {(walkEndClip != null ? walkEndClip.name : "없음")}");
+        Debug.Log($"달리기 반복 = {(runLoopClip != null ? runLoopClip.name : "없음")}");
+        Debug.Log($"달리기 종료 = {(runEndClip != null ? runEndClip.name : "없음")}");
+        Debug.Log($"약한 피격 = {(hitLightClip != null ? hitLightClip.name : "없음")}");
+        Debug.Log($"강한 피격 = {(hitHeavyClip != null ? hitHeavyClip.name : "없음")}");
+        Debug.Log($"전방 회피 = {(dodgeFrontClip != null ? dodgeFrontClip.name : "없음")}");
+        Debug.Log($"반격 시작 = {(dodgeCounterStartClip != null ? dodgeCounterStartClip.name : "없음")}");
+        Debug.Log($"반격 종료 = {(dodgeCounterEndClip != null ? dodgeCounterEndClip.name : "없음")}");
+        Debug.Log($"약한 패링 = {(parryLightClip != null ? parryLightClip.name : "없음")}");
+        Debug.Log($"강한 패링 = {(parryHeavyClip != null ? parryHeavyClip.name : "없음")}");
+        Debug.Log($"패링 시작 = {(parryStartClip != null ? parryStartClip.name : "없음")}");
 
 
-        const bool verboseClipListLog = false;
+        bool verboseClipListLog = false;
 
         if (verboseClipListLog)
         {
             for (int i = 0; i < clips.Count; i++)
             {
-                Debug.Log($"Clip[{i}] = {clips[i].name}");
+                Debug.Log($"클립[{i}] = {clips[i].name}");
             }
         }
 
         if (preset.characterData == null)
         {
-            Debug.LogError("CharacterData is missing.");
+            Debug.LogError("캐릭터 데이터가 없습니다.");
             return;
         }
 
@@ -517,7 +516,7 @@ public class CharacterBuildPipeline : MonoBehaviour
 
                 EditorUtility.SetDirty(attack);
 
-                Debug.Log($"NormalCombo[{i}] = {attack.attackAnim} / {attack.endAnim}");
+                Debug.Log($"일반 콤보[{i}] = {attack.attackAnim} / {attack.endAnim}");
             }
         }
 
@@ -532,7 +531,7 @@ public class CharacterBuildPipeline : MonoBehaviour
 
             EditorUtility.SetDirty(data.normalSkillBranch);
 
-            Debug.Log($"NormalSkill = {data.normalSkillBranch.skillAnim} / {data.normalSkillBranch.endAnim}");
+            Debug.Log($"일반 스킬 = {data.normalSkillBranch.skillAnim} / {data.normalSkillBranch.endAnim}");
         }
 
         if (data.normalSkillBranch != null)
@@ -540,7 +539,7 @@ public class CharacterBuildPipeline : MonoBehaviour
             data.normalSkillBranch.hitBoxSlotIndex = 1;
             EditorUtility.SetDirty(data.normalSkillBranch);
 
-            Debug.Log($"NormalSkill HitBox Slot = {data.normalSkillBranch.hitBoxSlotIndex}");
+            Debug.Log($"일반 스킬 히트박스 슬롯 = {data.normalSkillBranch.hitBoxSlotIndex}");
         }
 
         // 강화 스킬 자동 배정
@@ -558,7 +557,7 @@ public class CharacterBuildPipeline : MonoBehaviour
 
             EditorUtility.SetDirty(data.enhancedSkillBranch);
 
-            Debug.Log($"EnhancedSkill = {data.enhancedSkillBranch.skillAnim} / {data.enhancedSkillBranch.endAnim}");
+            Debug.Log($"강화 스킬 = {data.enhancedSkillBranch.skillAnim} / {data.enhancedSkillBranch.endAnim}");
         }
 
         if (data.enhancedSkillBranch != null)
@@ -566,7 +565,7 @@ public class CharacterBuildPipeline : MonoBehaviour
             data.enhancedSkillBranch.hitBoxSlotIndex = 2;
             EditorUtility.SetDirty(data.enhancedSkillBranch);
 
-            Debug.Log($"EnhancedSkill HitBox Slot = {data.enhancedSkillBranch.hitBoxSlotIndex}");
+            Debug.Log($"강화 스킬 히트박스 슬롯 = {data.enhancedSkillBranch.hitBoxSlotIndex}");
         }
 
         // 궁극기 자동 배정
@@ -582,14 +581,14 @@ public class CharacterBuildPipeline : MonoBehaviour
 
             EditorUtility.SetDirty(data.ultimateData);
 
-            Debug.Log($"Ultimate = {data.ultimateData.ultStartAnim} / {data.ultimateData.ultHitAnim} / {data.ultimateData.ultEndAnim}");
+            Debug.Log($"궁극기 = {data.ultimateData.ultStartAnim} / {data.ultimateData.ultHitAnim} / {data.ultimateData.ultEndAnim}");
         }
 
         EditorUtility.SetDirty(data);
         AssetDatabase.SaveAssets();
 
-        Debug.Log("CharacterData auto-configured.");
-        Debug.Log($"Normal Combo Count = {(data.normalCombo != null ? data.normalCombo.Length : 0)}");
+        Debug.Log("캐릭터 데이터 자동 구성을 완료했습니다.");
+        Debug.Log($"일반 콤보 개수 = {(data.normalCombo != null ? data.normalCombo.Length : 0)}");
     }
 
     private static AnimationClip FindClipContains(List<AnimationClip> clips, string token)
@@ -739,7 +738,7 @@ public class CharacterBuildPipeline : MonoBehaviour
 
         if (!folderPath.StartsWith("Assets"))
         {
-            Debug.LogError("Data output folder path must start with 'Assets'.");
+            Debug.LogError("데이터 출력 폴더 경로는 'Assets'로 시작해야 합니다.");
             return null;
         }
 

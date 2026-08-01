@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEditor;
@@ -87,15 +87,15 @@ internal static class DeadEndButcherEnemySetup
         {
             Scene scene = SceneManager.GetActiveScene();
             if (!scene.IsValid() || scene.path != ScenePath)
-                throw new InvalidOperationException($"Open {ScenePath} before running the setup.");
+                throw new InvalidOperationException($"설정을 실행하기 전에 {ScenePath} 씬을 여세요.");
 
             GameObject modelPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(ModelPath);
             if (modelPrefab == null)
-                throw new InvalidOperationException($"Dead End Butcher model is missing: {ModelPath}");
+                throw new InvalidOperationException($"도살자 모델이 없습니다: {ModelPath}");
 
             AnimationClip[] clips = LoadModelClips();
             if (clips.Length == 0)
-                throw new InvalidOperationException($"No animation clips were imported from {ModelPath}");
+                throw new InvalidOperationException($"{ModelPath}에서 가져온 애니메이션 클립이 없습니다.");
 
             AnimationClip idleClip = FindIdleClip(clips);
             AnimationClip[] attackClips = FindAttackClips(clips, idleClip);
@@ -105,14 +105,14 @@ internal static class DeadEndButcherEnemySetup
 
             GameObject enemyRoot = FindEnemyRoot(scene);
             if (enemyRoot == null)
-                throw new InvalidOperationException("The active scene does not contain an EnemyController root.");
+                throw new InvalidOperationException("현재 씬에 EnemyController 루트가 없습니다.");
 
             ReplaceVisual(enemyRoot, modelPrefab, animatorController, enemyData);
             RemoveLooseModelPreviews(scene, enemyRoot);
             EditorSceneManager.MarkSceneDirty(scene);
 
             if (!EditorSceneManager.SaveScene(scene))
-                throw new InvalidOperationException($"Unity could not save {ScenePath}; legacy assets were kept.");
+                throw new InvalidOperationException($"Unity가 {ScenePath} 씬을 저장하지 못해 기존 애셋을 유지했습니다.");
 
             if (deleteLegacyAssets)
                 DeleteLegacyAssets();
@@ -121,9 +121,9 @@ internal static class DeadEndButcherEnemySetup
             AssetDatabase.Refresh();
 
             Debug.Log(
-                $"Replaced the Durahan scene enemy with Dead End Butcher. " +
-                $"Animator states: {clips.Length}, attack patterns: {attackData.Length}. " +
-                "The scene was saved before legacy Durahan assets were removed.");
+                $"씬의 듀라한 적을 도살자로 교체했습니다. " +
+                $"애니메이터 상태: {clips.Length}개, 공격 패턴: {attackData.Length}개. " +
+                "기존 듀라한 애셋을 제거하기 전에 씬을 저장했습니다.");
             return true;
         }
         catch (Exception exception)
@@ -348,7 +348,7 @@ internal static class DeadEndButcherEnemySetup
                 modelPrefab,
                 enemyRoot.scene) as GameObject;
             if (instance == null)
-                throw new InvalidOperationException("Unity could not instantiate the Dead End Butcher FBX.");
+                throw new InvalidOperationException("Unity가 도살자 FBX를 인스턴스화하지 못했습니다.");
 
             butcherVisual = instance.transform;
             butcherVisual.name = "DeadEndButcher_Visual";
@@ -548,7 +548,7 @@ internal static class DeadEndButcherEnemySetup
                 continue;
 
             if (!AssetDatabase.DeleteAsset(path))
-                throw new InvalidOperationException($"Unity could not delete legacy Durahan asset: {path}");
+                throw new InvalidOperationException($"Unity가 기존 듀라한 애셋을 삭제하지 못했습니다: {path}");
         }
     }
 

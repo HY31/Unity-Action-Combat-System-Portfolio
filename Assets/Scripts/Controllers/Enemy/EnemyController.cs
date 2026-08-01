@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 
 public class EnemyController : MonoBehaviour
 {
@@ -192,7 +192,7 @@ public class EnemyController : MonoBehaviour
             supportPointManager != null &&
             supportPointManager.HasEnoughSupportPoint(1);
 
-        // Yellow 공격도 지원 포인트가 부족하면 플레이어에게 Red 경고로 안내한다.
+        // 노란색 공격도 지원 포인트가 부족하면 플레이어에게 빨간색 경고로 안내한다.
         bool showWarning = t >= currentAttack.warningStart && t < currentAttack.warningEnd;
 
         bool showYellow = showWarning &&
@@ -217,7 +217,7 @@ public class EnemyController : MonoBehaviour
 
         if (t >= 1f)
         {
-            // 별도 End 클립이 없는 패턴은 즉시 Idle 상태로 돌려보낼 수 있게 공격 상태만 정리한다.
+            // 별도 종료 클립이 없는 패턴은 즉시 대기 상태로 돌려보낼 수 있게 공격 상태만 정리한다.
             if (string.IsNullOrEmpty(currentAttack.endAnim))
             {
                 IsInWarningWindow = false;
@@ -313,7 +313,7 @@ public class EnemyController : MonoBehaviour
                 currentAnomalyGauge = state.gauge;
                 anomalyStates[i] = state;
 
-                Debug.Log($"{name} {state.element} anomaly gauge = {state.gauge:F1} / {enemyData.anomalyThreshold:F1}");
+                Debug.Log($"{name} {state.element} 이상 게이지 = {state.gauge:F1} / {enemyData.anomalyThreshold:F1}");
 
                 TryTriggerAnomaly(state.element, i);
 
@@ -334,7 +334,7 @@ public class EnemyController : MonoBehaviour
     }
     private void TriggerAnomaly(CombatElement element)
     {
-        Debug.Log($"{name} anomaly triggered: {element}");
+        Debug.Log($"{name} 이상 효과 발동: {element}");
     }
 
     private void TryTriggerAnomaly(CombatElement element, int stateIndex)
