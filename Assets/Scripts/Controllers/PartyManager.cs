@@ -11,6 +11,7 @@ public class PartyManager : MonoBehaviour
 {
     public PlayerController[] partyMembers;
     private int currentIndex = 0;
+    public event System.Action<PlayerController> ActiveCharacterChanged;
 
     [SerializeField] private ThirdPersonCameraController cameraController;
 
@@ -66,11 +67,12 @@ public class PartyManager : MonoBehaviour
 
         if (currentPlayer == null || currentPlayer.CameraFollowTarget == null)
         {
-            Debug.LogError("Current player camera target is missing.");
+            Debug.LogError("현재 플레이어의 카메라 대상이 없습니다.");
             return;
         }
 
         cameraController.SetTarget(currentPlayer.CameraFollowTarget);
+        ActiveCharacterChanged?.Invoke(currentPlayer);
     }
 
     public PlayerController GetCurrentCharacter()
@@ -115,6 +117,7 @@ public class PartyManager : MonoBehaviour
         switchedPlayer.gameObject.SetActive(true);
 
         currentIndex = targetIndex;
+        ActiveCharacterChanged?.Invoke(switchedPlayer);
 
         return switchedPlayer;
     }

@@ -90,11 +90,10 @@ public class PlayerController : MonoBehaviour
     public float MaxEnergy => maxEnergy;
     public float CurrentEnergy => currentEnergy;
     public float EnergyRecoveryRate => energyRecoveryRate;
+    public event System.Action<PlayerController> EnergyChanged;
     public bool IsEnhancedBranchReady =>
         characterData.enhancedSkillBranch != null &&
         currentEnergy >= characterData.enhancedSkillBranch.requiredEntryEnergy;
-
-    public TMP_Text energyText_temp;
 
     [Header("Ultimate")]
     [SerializeField] private float maxDecibel = 3000f;
@@ -153,16 +152,12 @@ public class PlayerController : MonoBehaviour
     {
         if (!isInitialized) return;
 
-        if (currentState == null)
-            ChangeState(LocomotionState);
+        ChangeState(LocomotionState);
     }
 
     private void Update()
     {
         currentState?.Update();
-
-        if (energyText_temp != null)
-            energyText_temp.text = currentEnergy.ToString("F0");
 
         if (decibelText_temp != null)
             decibelText_temp.text = currentDecibel.ToString("F0");
@@ -343,26 +338,32 @@ public class PlayerController : MonoBehaviour
 
     public void GainEnergy(float amount)
     {
-        currentEnergy = Mathf.Clamp(currentEnergy + amount, 0f, maxEnergy);
-        // NotifyEnergyChanged();  // 나중에 이벤트 용(무지갯빛 스킬 게이지 UI 옵저버 패턴)
+        SetEnergy(currentEnergy + amount);
     }
 
     public void RecoveryEnergyOverTime(float recoveryPerSecond)
     {
-        currentEnergy = Mathf.Clamp(
-            currentEnergy + recoveryPerSecond * Time.deltaTime,
-            0f,
-            maxEnergy);
-        // NotifyEnergyChanged();
+        SetEnergy(currentEnergy + recoveryPerSecond * Time.deltaTime);
     }
 
     public bool TryUseEnergy(float cost)
     {
-        if (currentEnergy < cost) return false;
+        cost = Mathf.Max(0f, cost);
+        if (currentEnergy < cost)
+            return false;
 
-        currentEnergy -= cost;
-        // NotifyEnergyChanged();
+        SetEnergy(currentEnergy - cost);
         return true;
+    }
+
+    private void SetEnergy(float value)
+    {
+        float clampedValue = Mathf.Clamp(value, 0f, maxEnergy);
+        if (Mathf.Approximately(currentEnergy, clampedValue))
+            return;
+
+        currentEnergy = clampedValue;
+        EnergyChanged?.Invoke(this);
     }
 
     public HitBox GetSkillHitBox(int slotIndex)

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -22,7 +22,6 @@ public sealed class PartyStatusUI : MonoBehaviour
 
     [Header("Data")]
     [SerializeField] private PartyManager partyManager;
-    [SerializeField] private bool findPartyManager = true;
     [SerializeField] private Sprite[] memberPortraits;
 
     [Header("Views")]
@@ -40,20 +39,6 @@ public sealed class PartyStatusUI : MonoBehaviour
     private float[] healthCurrent;
     private float[] healthMaximum;
 
-    private void Start()
-    {
-        ResolvePartyManager();
-        EnsureHealthCache();
-        Refresh();
-    }
-
-    private void LateUpdate()
-    {
-        ResolvePartyManager();
-        EnsureHealthCache();
-        Refresh();
-    }
-
     public void Bind(PartyManager manager, Sprite[] portraits = null)
     {
         partyManager = manager;
@@ -61,7 +46,8 @@ public sealed class PartyStatusUI : MonoBehaviour
             memberPortraits = portraits;
 
         EnsureHealthCache(true);
-        Refresh();
+        ConfigureEnergyImages();
+        RefreshNow();
     }
 
     public void Configure(SlotView active, SlotView[] reserves, Sprite[] portraits)
@@ -69,6 +55,8 @@ public sealed class PartyStatusUI : MonoBehaviour
         activeSlot = active;
         reserveSlots = reserves;
         memberPortraits = portraits;
+        ConfigureEnergyImages();
+        RefreshNow();
     }
 
     public void SetMemberHealth(PlayerController member, float current, float maximum)
@@ -82,6 +70,7 @@ public sealed class PartyStatusUI : MonoBehaviour
         healthCurrent[index] = Mathf.Max(0f, current);
         healthMaximum[index] = Mathf.Max(0f, maximum);
         healthNormalized[index] = maximum > 0f ? Mathf.Clamp01(current / maximum) : 0f;
+        RefreshNow();
     }
 
     public Sprite GetPortrait(PlayerController member)
@@ -125,6 +114,12 @@ public sealed class PartyStatusUI : MonoBehaviour
             PlayerController member = i < orderedReserve.Length ? orderedReserve[i] : null;
             ApplySlot(reserveSlots[i], member, false);
         }
+    }
+
+    public void RefreshNow()
+    {
+        EnsureHealthCache();
+        Refresh();
     }
 
     private void ApplySlot(SlotView slot, PlayerController member, bool showHealthText)
@@ -202,10 +197,26 @@ public sealed class PartyStatusUI : MonoBehaviour
         return Mathf.Clamp01(enhanced.requiredEntryEnergy / member.MaxEnergy);
     }
 
-    private void ResolvePartyManager()
+    private void ConfigureEnergyImages()
     {
-        if (partyManager == null && findPartyManager)
-            partyManager = FindFirstObjectByType<PartyManager>();
+        ConfigureEnergyImage(activeSlot);
+
+        if (reserveSlots == null)
+            return;
+
+        foreach (SlotView slot in reserveSlots)
+            ConfigureEnergyImage(slot);
+    }
+
+    private static void ConfigureEnergyImage(SlotView slot)
+    {
+        if (slot?.energyFill == null)
+            return;
+
+        slot.energyFill.type = Image.Type.Filled;
+        slot.energyFill.fillMethod = Image.FillMethod.Horizontal;
+        slot.energyFill.fillOrigin = (int)Image.OriginHorizontal.Left;
+        slot.energyFill.fillClockwise = true;
     }
 
     private int IndexOf(PlayerController member)
