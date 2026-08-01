@@ -15,9 +15,14 @@ public class AttackState : IPlayerState
 
     private int comboIndex;
 
+    // 현재 공격 중 입력된 다음 평타를 콤보 허용 시점까지 한 번만 예약한다.
     private bool bufferedAttackInput;
-    private float bufferedAttackTimer;
-    private const float BufferDuration = 0.2f;
+
+    // 평타 중 들어온 스킬 입력을 해당 공격의 스킬 캔슬 허용 시점까지 보관한다.
+    private bool bufferedSkillInput;
+
+    // 평타 중 들어온 회피 입력을 해당 공격의 회피 캔슬 허용 시점까지 보관한다.
+    private bool bufferedDodgeInput;
 
     private bool hitboxActive;
     private HitBox hitBox;
@@ -25,7 +30,8 @@ public class AttackState : IPlayerState
     private Transform assistTarget;
     private Vector3 attackAssistDirection;
     private bool hasAttackAssist;
-
+    private float previousMovementTime;
+    private float baseAnimatorSpeed = 1f;
 
     public AttackState(PlayerController player)
     {
@@ -34,10 +40,13 @@ public class AttackState : IPlayerState
 
     public void Enter()
     {
+        baseAnimatorSpeed = player.Animator != null ? player.Animator.speed : 1f;
         comboIndex = 0;
         bufferedAttackInput = false;
-        bufferedAttackTimer = 0f;
+        bufferedSkillInput = false;
+        bufferedDodgeInput = false;
         hitboxActive = false;
+        previousMovementTime = 0f;
         ClearAttackAssist();
 
         if (player.CharacterData == null
@@ -58,8 +67,6 @@ public class AttackState : IPlayerState
 
     public void Update()
     {
-        UpdateInputBuffer();
-
         AnimatorStateInfo info = player.Animator.GetCurrentAnimatorStateInfo(0);
 
         if (phase == AttackPhase.Attack)
@@ -75,23 +82,28 @@ public class AttackState : IPlayerState
     public void Exit()
     {
         SetHitBoxActive(false);
+        if (player.Animator != null)
+            player.Animator.speed = baseAnimatorSpeed;
+
         bufferedAttackInput = false;
-        bufferedAttackTimer = 0f;
+        bufferedSkillInput = false;
+        bufferedDodgeInput = false;
         hitboxActive = false;
+        previousMovementTime = 0f;
         ClearAttackAssist();
     }
 
     #region Handle
     public void HandleAttack()
     {
-        // 연타 입력을 짧게 보관해 콤보 허용 구간에 들어오는 즉시 다음 공격으로 연결한다.
+        // 현재 공격이 끝나기 전에 들어온 평타를 다음 콤보 1회로 예약한다.
         bufferedAttackInput = true;
-        bufferedAttackTimer = BufferDuration;
     }
 
     public void HandleDodge()
     {
-        player.ChangeState(player.DodgeState);
+        // 입력 순간 PlayerController가 결정한 일반/극한 회피 타입과 함께 회피 실행을 예약한다.
+        bufferedDodgeInput = true;
     }
 
     public void HandleHit()
@@ -101,13 +113,13 @@ public class AttackState : IPlayerState
 
     public void HandleSkill()
     {
-        // 실제 젠존제에서는 공격중에 스킬 누르면 바로 스킬 나감
-        // player.ChangeState(player.SkillState);
+        // 캔슬 허용 시점보다 일찍 들어온 스킬 입력도 한 번 예약한다.
+        bufferedSkillInput = true;
     }
     public void HandleUltimate()
     {
-        // player.ChangeState(player.UltimateState);
     }
+
     public void HandleParry()
     {
         player.ChangeState(player.ParryState);
@@ -118,6 +130,7 @@ public class AttackState : IPlayerState
     {
         currentAttack = attackData;
         phase = AttackPhase.Attack;
+        previousMovementTime = 0f;
 
         if (hitBox == null)
         {
@@ -146,6 +159,10 @@ public class AttackState : IPlayerState
         SetHitBoxActive(false);
         ResolveAttackAssist();
 
+        float playbackSpeed = currentAttack.playbackSpeed > 0f
+            ? currentAttack.playbackSpeed
+            : 1f;
+        player.Animator.speed = baseAnimatorSpeed * playbackSpeed;
         player.Animator.CrossFade(currentAttack.attackAnim, 0.05f);
     }
 
@@ -158,17 +175,20 @@ public class AttackState : IPlayerState
 
         UpdateAttackAssist(t);
 
-        // 보조 타겟이 있으면 공격 이동도 타겟 방향으로 유도한다.
-        if (t >= currentAttack.moveStart && t <= currentAttack.moveEnd)
-        {
-            Vector3 moveDirection = ResolveAttackMoveDirection();
-            Vector3 forwardMove = moveDirection * currentAttack.forwardMoveSpeed;
-            player.Controller.Move(forwardMove * Time.deltaTime);
-        }
+        // 루트 모션 대신 애니메이션 정규화 시간에 맞춰 결정론적으로 전진시킨다.
+        ApplyForwardMovement(t);
 
         // 애니메이션 정규화 시간과 실제 타격 판정의 활성 프레임을 동기화한다.
         bool shouldHitBoxBeActive = t >= currentAttack.startUpEnd && t < currentAttack.activeEnd;
         SetHitBoxActive(shouldHitBoxBeActive);
+
+        // 회피는 AttackState 내부에서 가장 우선순위가 높은 캔슬 행동이다.
+        if (TryCancelToDodge(t))
+            return;
+
+        // 스킬 예약이 실행되면 현재 AttackState가 종료되므로 이전 공격의 후속 처리를 중단한다.
+        if (TryCancelToSkill(t))
+            return;
 
         // 허용 시점 전에 들어온 버퍼 입력까지 포함해 콤보 전환을 시도한다.
         if (t >= currentAttack.comboInputOpenTime)
@@ -187,6 +207,14 @@ public class AttackState : IPlayerState
 
     private void UpdateEndPhase(AnimatorStateInfo info)
     {
+        // 공격 본체가 종료된 뒤 들어온 회피는 End 모션을 기다리지 않고 즉시 실행한다.
+        if (bufferedDodgeInput)
+        {
+            bufferedDodgeInput = false;
+            player.ChangeState(player.DodgeState);
+            return;
+        }
+
         if (!info.IsName(currentAttack.endAnim))
             return;
 
@@ -196,35 +224,51 @@ public class AttackState : IPlayerState
         }
     }
 
+    private bool TryCancelToDodge(float normalizedTime)
+    {
+        if (!bufferedDodgeInput)
+            return false;
+
+        if (normalizedTime < currentAttack.dodgeCancelOpenTime)
+            return false;
+
+        bufferedDodgeInput = false;
+
+        player.ChangeState(player.DodgeState);
+        return true;
+
+    }
+
+    private bool TryCancelToSkill(float normalizedTime)
+    {
+        if (!bufferedSkillInput)
+            return false;
+
+        if (normalizedTime < currentAttack.skillCancelOpenTime)
+            return false;
+
+        // 같은 예약이 이후 프레임에서 다시 실행되지 않도록 상태 전환 전에 소비한다.
+        bufferedSkillInput = false;
+
+        player.ChangeState(player.SkillState);
+        return true;
+    }
+
     private void TryChainCombo()
     {
         if (!bufferedAttackInput)
             return;
+
+        // 예약 입력은 유효한 다음 콤보가 있는지와 관계없이 한 번만 소비한다.
+        bufferedAttackInput = false;
 
         int nextIndex = currentAttack.nextComboIndex;
 
         if (nextIndex < 0 || nextIndex >= player.CharacterData.normalCombo.Length)
             return;
 
-        bufferedAttackInput = false;
-        bufferedAttackTimer = 0f;
         comboIndex = nextIndex;
-
         StartAttack(player.CharacterData.normalCombo[comboIndex]);
-    }
-
-    private void UpdateInputBuffer()
-    {
-        if (!bufferedAttackInput)
-            return;
-
-        bufferedAttackTimer -= Time.deltaTime;
-
-        if (bufferedAttackTimer <= 0f)
-        {
-            bufferedAttackInput = false;
-            bufferedAttackTimer = 0f;
-        }
     }
 
     private void SetHitBoxActive(bool active)
@@ -295,6 +339,68 @@ public class AttackState : IPlayerState
             return player.transform.forward;
 
         return attackAssistDirection;
+    }
+
+    private void ApplyForwardMovement(float normalizedTime)
+    {
+        float currentTime = Mathf.Clamp01(normalizedTime);
+        Vector3 moveDirection = ResolveAttackMoveDirection();
+
+        if (currentAttack.useDistanceBasedMovement)
+        {
+            float previousProgress = EvaluateMovementProgress(
+                previousMovementTime,
+                currentAttack.moveStart,
+                currentAttack.moveEnd);
+            float currentProgress = EvaluateMovementProgress(
+                currentTime,
+                currentAttack.moveStart,
+                currentAttack.moveEnd);
+            float progressDelta = Mathf.Max(0f, currentProgress - previousProgress);
+
+            if (progressDelta > 0f)
+            {
+                float moveDistance = ClampMoveDistanceToTarget(
+                    currentAttack.forwardMoveDistance * progressDelta,
+                    moveDirection);
+
+                player.Controller.Move(
+                    moveDirection * moveDistance);
+            }
+        }
+        else if (currentTime >= currentAttack.moveStart && currentTime <= currentAttack.moveEnd)
+        {
+            float moveDistance = ClampMoveDistanceToTarget(
+                currentAttack.forwardMoveSpeed * Time.deltaTime,
+                moveDirection);
+
+            player.Controller.Move(
+                moveDirection * moveDistance);
+        }
+
+        previousMovementTime = Mathf.Max(previousMovementTime, currentTime);
+    }
+
+    private static float EvaluateMovementProgress(float normalizedTime, float start, float end)
+    {
+        if (end <= start)
+            return normalizedTime >= end ? 1f : 0f;
+
+        return Mathf.InverseLerp(start, end, normalizedTime);
+    }
+
+    private float ClampMoveDistanceToTarget(float requestedDistance, Vector3 moveDirection)
+    {
+        if (requestedDistance <= 0f || !hasAttackAssist || assistTarget == null)
+            return Mathf.Max(0f, requestedDistance);
+
+        Vector3 toTarget = assistTarget.position - player.transform.position;
+        toTarget.y = 0f;
+
+        float distanceAlongMove = Vector3.Dot(toTarget, moveDirection);
+        float remainingDistance = distanceAlongMove - currentAttack.autoAimStopDistance;
+
+        return Mathf.Clamp(requestedDistance, 0f, Mathf.Max(0f, remainingDistance));
     }
 
     private void ClearAttackAssist()

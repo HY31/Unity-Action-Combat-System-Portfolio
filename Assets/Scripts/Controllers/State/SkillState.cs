@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 
 public class SkillState : IPlayerState
 {
@@ -23,6 +23,7 @@ public class SkillState : IPlayerState
     private Transform assistTarget;
     private Vector3 attackAssistDirection;
     private bool hasAttackAssist;
+    private float previousMovementTime;
 
     public SkillState(PlayerController player)
     {
@@ -52,6 +53,7 @@ public class SkillState : IPlayerState
         bufferedSkillInput = false;
         bufferedSkillTimer = 0f;
         skillHitboxActive = false;
+        previousMovementTime = 0f;
 
         ClearAttackAssist();
     }
@@ -78,6 +80,7 @@ public class SkillState : IPlayerState
         bufferedSkillInput = false;
         bufferedSkillTimer = 0f;
         skillHitboxActive = false;
+        previousMovementTime = 0f;
         ClearAttackAssist();
     }
 
@@ -121,13 +124,8 @@ public class SkillState : IPlayerState
 
         UpdateAttackAssist(t);
 
-        // 보조 타겟이 있으면 스킬 이동도 타겟 방향으로 유도한다.
-        if (t >= currentSkill.moveStart && t <= currentSkill.moveEnd)
-        {
-            Vector3 moveDirection = ResolveAttackMoveDirection();
-            Vector3 forwardMove = moveDirection * currentSkill.forwardMoveSpeed;
-            player.Controller.Move(forwardMove * Time.deltaTime);
-        }
+        // 루트 모션 대신 애니메이션 정규화 시간에 맞춰 결정론적으로 전진시킨다.
+        ApplyForwardMovement(t);
 
         // 스킬 데이터의 활성 구간에만 선택된 슬롯의 HitBox를 켠다.
         bool shouldHitBoxBeActive = t >= currentSkill.hitStart && t < currentSkill.hitEnd;
@@ -164,11 +162,29 @@ public class SkillState : IPlayerState
         if (skill == null)
             return false;
 
+        if (!HasAnimatorState(skill.skillAnim))
+        {
+            Debug.LogError(
+                $"스킬 애니메이션 상태 '{skill.skillAnim}'을(를) " +
+                $"'{player.Animator.runtimeAnimatorController?.name}'에서 찾을 수 없습니다.",
+                player);
+            return false;
+        }
+
+        if (!HasAnimatorState(skill.endAnim))
+        {
+            Debug.LogError(
+                $"스킬 종료 애니메이션 상태 '{skill.endAnim}'을(를) " +
+                $"'{player.Animator.runtimeAnimatorController?.name}'에서 찾을 수 없습니다.",
+                player);
+            return false;
+        }
+
         skillHitBox = player.GetSkillHitBox(skill.hitBoxSlotIndex);
 
         if (skillHitBox == null)
         {
-            Debug.LogError("skill hit box is missing.");
+            Debug.LogError("스킬 히트박스가 없습니다.");
             return false;
         }
 
@@ -178,6 +194,7 @@ public class SkillState : IPlayerState
 
         currentSkill = skill;
         phase = SkillPhase.Attack;
+        previousMovementTime = 0f;
 
 
         skillHitBox.SetRewardType(DecibelRewardType.Skill);
@@ -203,6 +220,20 @@ public class SkillState : IPlayerState
         player.Animator.CrossFade(currentSkill.skillAnim, 0.05f);
 
         return true;
+    }
+
+    private bool HasAnimatorState(string stateName)
+    {
+        if (player.Animator == null || string.IsNullOrWhiteSpace(stateName))
+            return false;
+
+        int shortNameHash = Animator.StringToHash(stateName);
+        if (player.Animator.HasState(0, shortNameHash))
+            return true;
+
+        string layerName = player.Animator.GetLayerName(0);
+        int fullPathHash = Animator.StringToHash($"{layerName}.{stateName}");
+        return player.Animator.HasState(0, fullPathHash);
     }
 
     private void TryChainSkill()
@@ -303,6 +334,68 @@ public class SkillState : IPlayerState
             return player.transform.forward;
 
         return attackAssistDirection;
+    }
+
+    private void ApplyForwardMovement(float normalizedTime)
+    {
+        float currentTime = Mathf.Clamp01(normalizedTime);
+        Vector3 moveDirection = ResolveAttackMoveDirection();
+
+        if (currentSkill.useDistanceBasedMovement)
+        {
+            float previousProgress = EvaluateMovementProgress(
+                previousMovementTime,
+                currentSkill.moveStart,
+                currentSkill.moveEnd);
+            float currentProgress = EvaluateMovementProgress(
+                currentTime,
+                currentSkill.moveStart,
+                currentSkill.moveEnd);
+            float progressDelta = Mathf.Max(0f, currentProgress - previousProgress);
+
+            if (progressDelta > 0f)
+            {
+                float moveDistance = ClampMoveDistanceToTarget(
+                    currentSkill.forwardMoveDistance * progressDelta,
+                    moveDirection);
+
+                player.Controller.Move(
+                    moveDirection * moveDistance);
+            }
+        }
+        else if (currentTime >= currentSkill.moveStart && currentTime <= currentSkill.moveEnd)
+        {
+            float moveDistance = ClampMoveDistanceToTarget(
+                currentSkill.forwardMoveSpeed * Time.deltaTime,
+                moveDirection);
+
+            player.Controller.Move(
+                moveDirection * moveDistance);
+        }
+
+        previousMovementTime = Mathf.Max(previousMovementTime, currentTime);
+    }
+
+    private static float EvaluateMovementProgress(float normalizedTime, float start, float end)
+    {
+        if (end <= start)
+            return normalizedTime >= end ? 1f : 0f;
+
+        return Mathf.InverseLerp(start, end, normalizedTime);
+    }
+
+    private float ClampMoveDistanceToTarget(float requestedDistance, Vector3 moveDirection)
+    {
+        if (requestedDistance <= 0f || !hasAttackAssist || assistTarget == null)
+            return Mathf.Max(0f, requestedDistance);
+
+        Vector3 toTarget = assistTarget.position - player.transform.position;
+        toTarget.y = 0f;
+
+        float distanceAlongMove = Vector3.Dot(toTarget, moveDirection);
+        float remainingDistance = distanceAlongMove - currentSkill.autoAimStopDistance;
+
+        return Mathf.Clamp(requestedDistance, 0f, Mathf.Max(0f, remainingDistance));
     }
 
     private void ClearAttackAssist()

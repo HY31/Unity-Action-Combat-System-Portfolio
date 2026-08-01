@@ -35,6 +35,9 @@ public class SkillData : ScriptableObject
 
     [Header("Movement")]
     public float forwardMoveSpeed = 4f;
+    [Tooltip("초당 이동 속도 대신 애니메이션 구간에 걸쳐 지정된 거리를 이동한다.")]
+    public bool useDistanceBasedMovement;
+    [Min(0f)] public float forwardMoveDistance = 1f;
 
     [Header("Feedback")]
     public float hitStopDuration = 0.06f;
@@ -47,6 +50,7 @@ public class SkillData : ScriptableObject
     [Range(0f, 180f)] public float autoAimMaxAngle = 70f;
     [Min(0f)] public float autoAimRotationMultiplier = 2f;
     [Range(0f, 1f)] public float autoAimRotateUntil = 0.2f;
+    [Min(0f)] public float autoAimStopDistance = 0.8f;
     public bool steerMoveToTarget = true;
 }
 
