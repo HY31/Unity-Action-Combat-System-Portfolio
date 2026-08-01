@@ -1,6 +1,6 @@
 ﻿using UnityEngine;
 
-public class HitState : IPlayerState
+public class HitState : IPlayerState, IUltimateBlockingState
 {
     private PlayerController player;
     private float hitDuration = 0.5f;

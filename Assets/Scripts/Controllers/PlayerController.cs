@@ -461,8 +461,25 @@ public class PlayerController : MonoBehaviour
 
     public void OnUltimate(InputValue value)
     {
-        if (value.isPressed)
-            currentState?.HandleUltimate();
+        if (!value.isPressed)
+            return;
+
+        if (!isInitialized || currentState == null)
+            return;
+
+        // 이미 궁극기 상태라면 같은 궁극기를 다시 시작하지 않는다.
+        if (currentState == UltimateState)
+            return;
+
+        // 피격·사망·컷신 등 명시적으로 잠긴 상태에서는 궁극기를 사용할 수 없다.
+        if (currentState is IUltimateBlockingState)
+            return;
+
+        if (!CanUseUltimate)
+            return;
+
+        // 궁극기는 일반 행동의 캔슬 시점과 관계없이 현재 State를 즉시 종료한다.
+        ChangeState(UltimateState);
     }
 
     public void OnSwitch_Nxt(InputValue value)
