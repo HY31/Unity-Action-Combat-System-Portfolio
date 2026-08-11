@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using UnityEditor;
 using UnityEngine;
@@ -39,6 +39,7 @@ internal static class CombatHudPrefabBuilder
     private const string PlayerPrefabPath = PrefabRoot + "/ZZZ_PlayerPartyHUD.prefab";
     private const string EnemyPrefabPath = PrefabRoot + "/ZZZ_EnemyWorldHUD.prefab";
     private const string ChainPrefabPath = PrefabRoot + "/ZZZ_ChainSkillPrompt.prefab";
+    private const string AssaultPrefabPath = PrefabRoot + "/ZZZ_AssaultBattleHUD.prefab";
     private const string DemoPrefabPath = PrefabRoot + "/ZZZ_HUD_V2_DemoCanvas.prefab";
     private const string SessionKey = "ZZZHudV2PrefabBuilder.AutoBuildAttempted";
 
@@ -63,7 +64,8 @@ internal static class CombatHudPrefabBuilder
         GameObject player = BuildPlayerPartyPrefab();
         GameObject enemy = BuildEnemyWorldPrefab();
         GameObject chain = BuildChainPromptPrefab();
-        BuildDemoCanvas(player, enemy, chain);
+        GameObject assault = BuildAssaultBattlePrefab();
+        BuildDemoCanvas(player, enemy, chain, assault);
 
         AssetDatabase.SaveAssets();
         AssetDatabase.Refresh();
@@ -86,11 +88,27 @@ internal static class CombatHudPrefabBuilder
 
     private static void AutoBuildOnce()
     {
-        if (SessionState.GetBool(SessionKey, false) || EditorApplication.isCompiling || EditorApplication.isUpdating)
+        if (EditorApplication.isPlayingOrWillChangePlaymode)
+            return;
+
+        if (EditorApplication.isCompiling || EditorApplication.isUpdating)
+        {
+            EditorApplication.delayCall += AutoBuildOnce;
+            return;
+        }
+
+        GameObject playerPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(PlayerPrefabPath);
+        GameObject assaultPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(AssaultPrefabPath);
+        bool resourceViewsMissing =
+            playerPrefab == null ||
+            playerPrefab.transform.Find("Decibel") == null ||
+            assaultPrefab == null;
+
+        if (SessionState.GetBool(SessionKey, false) && !resourceViewsMissing)
             return;
 
         SessionState.SetBool(SessionKey, true);
-        if (AssetDatabase.LoadAssetAtPath<GameObject>(DemoPrefabPath) == null)
+        if (AssetDatabase.LoadAssetAtPath<GameObject>(DemoPrefabPath) == null || resourceViewsMissing)
             BuildAll();
     }
 
@@ -154,11 +172,17 @@ internal static class CombatHudPrefabBuilder
             marker,
             reserveSwapIcon);
 
+        PartyStatusUI.ResourceView resources = BuildCombatResourceView(
+            root.transform,
+            energyFrame,
+            energyFill,
+            marker);
+
         PartyStatusUI hud = root.AddComponent<PartyStatusUI>();
         hud.Configure(
             active,
             new[] { reserveOne, reserveTwo },
-            new[] { portraitA, portraitB, portraitC });
+            new[] { portraitA, portraitB, portraitC }, resources);
 
         GameObject saved = PrefabUtility.SaveAsPrefabAsset(root, PlayerPrefabPath);
         UnityEngine.Object.DestroyImmediate(root);
@@ -309,6 +333,58 @@ internal static class CombatHudPrefabBuilder
             healthText = null
         };
     }
+    private static PartyStatusUI.ResourceView BuildCombatResourceView(
+        Transform parent,
+        Sprite gaugeFrame,
+        Sprite gaugeFill,
+        Sprite supportPointSprite)
+    {
+        GaugeParts decibel = CreateGauge(
+            "Decibel",
+            parent,
+            new Vector2(180f, 14f),
+            new Vector2(-170f, -39f),
+            gaugeFrame,
+            gaugeFill,
+            new Vector4(3f, 2f, 3f, 2f),
+            false,
+            null);
+        decibel.fill.color = new Color32(65, 190, 255, 255);
+        decibel.fill.fillAmount = 0f;
+
+        Text decibelText = CreateText(
+            "DecibelText",
+            parent,
+            "0 / 3000",
+            12,
+            TextAnchor.MiddleLeft,
+            FontStyle.BoldAndItalic,
+            Color.white);
+        SetRect(decibelText.gameObject, new Vector2(92f, 18f), new Vector2(-28f, -39f));
+        AddTextOutline(decibelText, new Vector2(1f, -1f));
+
+        Image[] supportPips = new Image[6];
+        for (int i = 0; i < supportPips.Length; i++)
+        {
+            Image pip = CreateImage(
+                $"SupportPoint_{i + 1:00}",
+                parent,
+                supportPointSprite,
+                new Color32(255, 191, 22, 255));
+            SetRect(
+                pip.gameObject,
+                new Vector2(15f, 15f),
+                new Vector2(-390f + i * 18f, -39f));
+            supportPips[i] = pip;
+        }
+
+        return new PartyStatusUI.ResourceView
+        {
+            decibelFill = decibel.fill,
+            decibelText = decibelText,
+            supportPointPips = supportPips
+        };
+    }
 
     private static GameObject BuildEnemyWorldPrefab()
     {
@@ -357,12 +433,18 @@ internal static class CombatHudPrefabBuilder
 
         GameObject anomalyRoot = CreateUiObject("AnomalyIcon", visuals.transform);
         SetRect(anomalyRoot, new Vector2(44f, 44f), new Vector2(59f, 15f));
-        Image anomaly = anomalyRoot.AddComponent<Image>();
-        anomaly.sprite = anomalySprite;
-        anomaly.raycastTarget = false;
+        Image anomalyFill = CreateImage("AnomalyFill", anomalyRoot.transform, anomalySprite, new Color32(165, 92, 255, 255));
+        Stretch(anomalyFill.rectTransform, new Vector4(5f, 5f, 5f, 5f));
+        anomalyFill.type = Image.Type.Filled;
+        anomalyFill.fillMethod = Image.FillMethod.Radial360;
+        anomalyFill.fillOrigin = (int)Image.Origin360.Top;
+        anomalyFill.fillClockwise = false;
+        anomalyFill.fillAmount = 0f;
+        Image anomalyFrame = CreateImage("AnomalyFrame", anomalyRoot.transform, anomalySprite, Color.white);
+        Stretch(anomalyFrame.rectTransform);
 
         EnemyWorldStatusUI hud = root.AddComponent<EnemyWorldStatusUI>();
-        hud.Configure(health, stun, stunPercent, damageMultiplier, visuals, anomalyRoot);
+        hud.Configure(health, stun, stunPercent, damageMultiplier, visuals, anomalyRoot, anomalyFill, anomalyFrame);
         hud.ConfigureAutoTarget("Enemy", new Vector3(0f, 1.7f, 0f));
 
         GameObject saved = PrefabUtility.SaveAsPrefabAsset(root, EnemyPrefabPath);
@@ -480,7 +562,303 @@ internal static class CombatHudPrefabBuilder
         return portrait;
     }
 
-    private static void BuildDemoCanvas(GameObject playerPrefab, GameObject enemyPrefab, GameObject chainPrefab)
+
+    private static GameObject BuildAssaultBattlePrefab()
+    {
+        Sprite energyFillSprite = LoadSprite("player_energy_fill");
+
+        GameObject root = CreateUiObject("ZZZ_AssaultBattleHUD", null);
+        Stretch(root.GetComponent<RectTransform>());
+
+        GameObject combatView = CreateUiObject("CombatView", root.transform);
+        Stretch(combatView.GetComponent<RectTransform>());
+        CanvasGroup combatGroup = combatView.AddComponent<CanvasGroup>();
+        combatGroup.alpha = 0f;
+        combatGroup.interactable = false;
+        combatGroup.blocksRaycasts = false;
+
+        Image timerBack = CreateImage(
+            "TimerPanel",
+            combatView.transform,
+            null,
+            new Color32(7, 9, 10, 224));
+        SetRect(timerBack.gameObject, new Vector2(360f, 92f), Vector2.zero);
+        RectTransform timerBackRect = timerBack.rectTransform;
+        timerBackRect.anchorMin = new Vector2(0.5f, 1f);
+        timerBackRect.anchorMax = new Vector2(0.5f, 1f);
+        timerBackRect.pivot = new Vector2(0.5f, 1f);
+        timerBackRect.anchoredPosition = new Vector2(0f, -28f);
+
+        Image timerAccent = CreateImage(
+            "Accent",
+            timerBack.transform,
+            null,
+            new Color32(224, 245, 30, 255));
+        SetRect(timerAccent.gameObject, new Vector2(184f, 5f), new Vector2(0f, -43f));
+
+        Text operationLabel = CreateText(
+            "OperationLabel",
+            timerBack.transform,
+            "ASSAULT OPERATION",
+            15,
+            TextAnchor.MiddleCenter,
+            FontStyle.Bold,
+            new Color32(224, 245, 30, 255));
+        SetRect(operationLabel.gameObject, new Vector2(320f, 24f), new Vector2(0f, 28f));
+
+        Text timerText = CreateText(
+            "Timer",
+            timerBack.transform,
+            "03:00",
+            43,
+            TextAnchor.MiddleCenter,
+            FontStyle.Bold,
+            Color.white);
+        SetRect(timerText.gameObject, new Vector2(300f, 58f), new Vector2(0f, -5f));
+        AddTextOutline(timerText, new Vector2(2f, -2f));
+
+        Image scoreBack = CreateImage(
+            "ScorePanel",
+            combatView.transform,
+            null,
+            new Color32(7, 9, 10, 224));
+        SetRect(scoreBack.gameObject, new Vector2(348f, 100f), Vector2.zero);
+        RectTransform scoreBackRect = scoreBack.rectTransform;
+        scoreBackRect.anchorMin = Vector2.one;
+        scoreBackRect.anchorMax = Vector2.one;
+        scoreBackRect.pivot = Vector2.one;
+        scoreBackRect.anchoredPosition = new Vector2(-48f, -42f);
+
+        Text scoreLabel = CreateText(
+            "ScoreLabel",
+            scoreBack.transform,
+            "TOTAL SCORE",
+            15,
+            TextAnchor.MiddleLeft,
+            FontStyle.Bold,
+            new Color32(180, 184, 184, 255));
+        SetRect(scoreLabel.gameObject, new Vector2(170f, 24f), new Vector2(-76f, 27f));
+
+        Text scoreText = CreateText(
+            "Score",
+            scoreBack.transform,
+            "00000",
+            39,
+            TextAnchor.MiddleRight,
+            FontStyle.Bold,
+            new Color32(255, 196, 22, 255));
+        SetRect(scoreText.gameObject, new Vector2(190f, 52f), new Vector2(65f, 14f));
+        AddTextOutline(scoreText, new Vector2(2f, -2f));
+
+        Text damageText = CreateText(
+            "Damage",
+            scoreBack.transform,
+            "DMG 00000  OP 0000",
+            15,
+            TextAnchor.MiddleRight,
+            FontStyle.Bold,
+            new Color32(230, 232, 232, 255));
+        SetRect(damageText.gameObject, new Vector2(300f, 24f), new Vector2(0f, -24f));
+
+        Image scoreTrack = CreateImage(
+            "ScoreTrack",
+            scoreBack.transform,
+            null,
+            new Color32(51, 54, 54, 255));
+        SetRect(scoreTrack.gameObject, new Vector2(300f, 7f), new Vector2(0f, -43f));
+
+        Image scoreFill = CreateImage(
+            "ScoreFill",
+            scoreTrack.transform,
+            energyFillSprite,
+            new Color32(224, 245, 30, 255));
+        Stretch(scoreFill.rectTransform);
+        ConfigureHorizontalFill(scoreFill, 0f);
+
+        GameObject wipeoutView = CreateUiObject("WipeoutView", root.transform);
+        Stretch(wipeoutView.GetComponent<RectTransform>());
+        CanvasGroup wipeoutGroup = wipeoutView.AddComponent<CanvasGroup>();
+        wipeoutGroup.alpha = 0f;
+        wipeoutGroup.interactable = false;
+        wipeoutGroup.blocksRaycasts = false;
+
+        Image wipeoutTint = CreateImage(
+            "YellowTint",
+            wipeoutView.transform,
+            null,
+            new Color(1f, 0.72f, 0.05f, 0.82f));
+        Stretch(wipeoutTint.rectTransform);
+
+        Text wipeoutText = CreateText(
+            "WipeoutText",
+            wipeoutView.transform,
+            "WIPEOUT",
+            112,
+            TextAnchor.MiddleCenter,
+            FontStyle.BoldAndItalic,
+            Color.white);
+        SetRect(wipeoutText.gameObject, new Vector2(900f, 180f), Vector2.zero);
+        AddTextOutline(wipeoutText, new Vector2(6f, -6f));
+
+        GameObject resultView = CreateUiObject("ResultView", root.transform);
+        Stretch(resultView.GetComponent<RectTransform>());
+        CanvasGroup resultGroup = resultView.AddComponent<CanvasGroup>();
+        resultGroup.alpha = 0f;
+        resultGroup.interactable = false;
+        resultGroup.blocksRaycasts = false;
+
+        Image resultDim = CreateImage(
+            "Dim",
+            resultView.transform,
+            null,
+            new Color32(0, 0, 0, 158));
+        Stretch(resultDim.rectTransform);
+
+        Image resultPanel = CreateImage(
+            "ResultPanel",
+            resultView.transform,
+            null,
+            new Color32(12, 14, 15, 244));
+        SetRect(resultPanel.gameObject, new Vector2(920f, 460f), Vector2.zero);
+
+        Image resultAccent = CreateImage(
+            "Accent",
+            resultPanel.transform,
+            null,
+            new Color32(224, 245, 30, 255));
+        SetRect(resultAccent.gameObject, new Vector2(920f, 9f), new Vector2(0f, 225f));
+
+        Text resultHeader = CreateText(
+            "Header",
+            resultPanel.transform,
+            "COMBAT RESULT",
+            25,
+            TextAnchor.MiddleLeft,
+            FontStyle.Bold,
+            Color.white);
+        SetRect(resultHeader.gameObject, new Vector2(420f, 42f), new Vector2(-230f, 190f));
+
+        Text resultReasonText = CreateText(
+            "Reason",
+            resultPanel.transform,
+            "BATTLE COMPLETE",
+            17,
+            TextAnchor.MiddleRight,
+            FontStyle.Bold,
+            new Color32(224, 245, 30, 255));
+        SetRect(resultReasonText.gameObject, new Vector2(390f, 36f), new Vector2(235f, 190f));
+
+        Text rankText = CreateText(
+            "Rank",
+            resultPanel.transform,
+            "S",
+            132,
+            TextAnchor.MiddleCenter,
+            FontStyle.Bold,
+            new Color32(255, 196, 22, 255));
+        SetRect(rankText.gameObject, new Vector2(210f, 230f), new Vector2(-330f, 15f));
+        AddTextOutline(rankText, new Vector2(4f, -4f));
+
+        Text resultScoreText = CreateText(
+            "Score",
+            resultPanel.transform,
+            "SCORE  00000",
+            34,
+            TextAnchor.MiddleLeft,
+            FontStyle.Bold,
+            Color.white);
+        SetRect(resultScoreText.gameObject, new Vector2(400f, 58f), new Vector2(-40f, 60f));
+
+        Text resultDamageText = CreateText(
+            "Damage",
+            resultPanel.transform,
+            "DAMAGE SCORE  00000   OPERATION  0000",
+            18,
+            TextAnchor.MiddleLeft,
+            FontStyle.Bold,
+            new Color32(190, 194, 194, 255));
+        SetRect(resultDamageText.gameObject, new Vector2(430f, 42f), new Vector2(-25f, 4f));
+
+        Text resultHint = CreateText(
+            "Hint",
+            resultPanel.transform,
+            "ASSAULT OPERATION COMPLETE",
+            14,
+            TextAnchor.MiddleLeft,
+            FontStyle.Bold,
+            new Color32(224, 245, 30, 255));
+        SetRect(resultHint.gameObject, new Vector2(430f, 30f), new Vector2(-25f, -52f));
+
+        Image bossImage = CreateImage(
+            "BossImage",
+            resultPanel.transform,
+            null,
+            new Color32(31, 34, 35, 255));
+        SetRect(bossImage.gameObject, new Vector2(230f, 260f), new Vector2(315f, 20f));
+        Outline bossOutline = bossImage.gameObject.AddComponent<Outline>();
+        bossOutline.effectColor = new Color32(224, 245, 30, 255);
+        bossOutline.effectDistance = new Vector2(2f, -2f);
+        bossOutline.useGraphicAlpha = true;
+
+        Text bossLabel = CreateText(
+            "BossLabel",
+            bossImage.transform,
+            "DEAD END\nBUTCHER",
+            24,
+            TextAnchor.MiddleCenter,
+            FontStyle.Bold,
+            new Color32(190, 194, 194, 255));
+        Stretch(bossLabel.rectTransform);
+
+        Image exitBackground = CreateImage(
+            "ExitButton",
+            resultPanel.transform,
+            null,
+            new Color32(20, 23, 24, 255));
+        SetRect(exitBackground.gameObject, new Vector2(230f, 58f), new Vector2(315f, -180f));
+        exitBackground.raycastTarget = true;
+        Button exitButton = exitBackground.gameObject.AddComponent<Button>();
+        exitButton.targetGraphic = exitBackground;
+        ColorBlock exitColors = exitButton.colors;
+        exitColors.normalColor = new Color32(20, 23, 24, 255);
+        exitColors.highlightedColor = new Color32(62, 68, 50, 255);
+        exitColors.pressedColor = new Color32(224, 245, 30, 255);
+        exitColors.selectedColor = exitColors.highlightedColor;
+        exitButton.colors = exitColors;
+
+        Text exitLabel = CreateText(
+            "Label",
+            exitButton.transform,
+            "나가기",
+            25,
+            TextAnchor.MiddleCenter,
+            FontStyle.Bold,
+            Color.white);
+        Stretch(exitLabel.rectTransform);
+
+        AssaultBattleHUD hud = root.AddComponent<AssaultBattleHUD>();
+        hud.ConfigureView(
+            combatGroup,
+            timerText,
+            scoreText,
+            damageText,
+            scoreFill,
+            resultGroup,
+            resultReasonText,
+            rankText,
+            resultScoreText,
+            resultDamageText,
+            wipeoutGroup,
+            wipeoutTint,
+            wipeoutText,
+            bossImage,
+            exitButton);
+
+        GameObject saved = PrefabUtility.SaveAsPrefabAsset(root, AssaultPrefabPath);
+        UnityEngine.Object.DestroyImmediate(root);
+        return saved;
+    }
+    private static void BuildDemoCanvas(GameObject playerPrefab, GameObject enemyPrefab, GameObject chainPrefab, GameObject assaultPrefab)
     {
         GameObject canvasObject = new GameObject(
             "ZZZ_HUD_V2_DemoCanvas",
@@ -511,6 +889,9 @@ internal static class CombatHudPrefabBuilder
 
         RectTransform chain = InstantiateUiPrefab(chainPrefab, canvasObject.transform);
         Stretch(chain);
+
+        RectTransform assault = InstantiateUiPrefab(assaultPrefab, canvasObject.transform);
+        Stretch(assault);
 
         PrefabUtility.SaveAsPrefabAsset(canvasObject, DemoPrefabPath);
         UnityEngine.Object.DestroyImmediate(canvasObject);

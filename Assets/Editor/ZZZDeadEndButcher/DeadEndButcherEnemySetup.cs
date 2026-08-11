@@ -20,6 +20,7 @@ internal static class DeadEndButcherEnemySetup
     private const string AttackDataRoot = "Assets/ScriptableObject/Enemy";
     private const string MaterialRoot = "Assets/ThirdParty/ZZZ_DeadEndButcher/Materials";
     private const string LegacyModelPath = "Assets/Monster/Monster_Durahan_LOD3";
+    private const float BodyCollisionHeight = 100f;
 
     private static readonly string[] LegacyAssetPaths =
     {
@@ -403,6 +404,33 @@ internal static class DeadEndButcherEnemySetup
         }
 
         FitHurtBox(enemyRoot, butcherVisual.gameObject);
+        ConfigureBodyCollision(enemyRoot);
+    }
+
+    private static void ConfigureBodyCollision(GameObject enemyRoot)
+    {
+        Transform bodyCollisionTransform = enemyRoot.transform.Find("BodyCollision");
+        if (bodyCollisionTransform == null)
+        {
+            GameObject bodyCollisionObject = new GameObject("BodyCollision");
+            bodyCollisionTransform = bodyCollisionObject.transform;
+            bodyCollisionTransform.SetParent(enemyRoot.transform, false);
+        }
+
+        BoxCollider bodyCollider = bodyCollisionTransform.GetComponent<BoxCollider>();
+        if (bodyCollider == null)
+            bodyCollider = bodyCollisionTransform.gameObject.AddComponent<BoxCollider>();
+
+        bodyCollider.isTrigger = false;
+
+        // 공중 공격 중 캐릭터가 보스 머리 위에 착지하지 않도록 충돌 기둥을 충분히 높게 유지한다.
+        Vector3 center = bodyCollider.center;
+        Vector3 size = bodyCollider.size;
+        center.y = BodyCollisionHeight * 0.5f;
+        size.y = BodyCollisionHeight;
+        bodyCollider.center = center;
+        bodyCollider.size = size;
+        EditorUtility.SetDirty(bodyCollider);
     }
 
     private static Transform FindDirectVisual(Transform root, string nameFragment)

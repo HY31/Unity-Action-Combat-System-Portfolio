@@ -6,6 +6,7 @@ public class HitStop : MonoBehaviour
     private static Tween activeHitStop;
     private static Tween activeSlowMotion;
     private static bool isHitStopped;
+    private static bool isExternallyPaused;
     private static float presentationTimeScale = 1f;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
@@ -14,6 +15,7 @@ public class HitStop : MonoBehaviour
         activeHitStop = null;
         activeSlowMotion = null;
         isHitStopped = false;
+        isExternallyPaused = false;
         presentationTimeScale = 1f;
     }
 
@@ -77,8 +79,16 @@ public class HitStop : MonoBehaviour
         ApplyTimeScale();
     }
 
+    public static void SetExternalPause(bool paused)
+    {
+        isExternallyPaused = paused;
+        ApplyTimeScale();
+    }
+
     private static void ApplyTimeScale()
     {
-        Time.timeScale = isHitStopped ? 0f : presentationTimeScale;
+        Time.timeScale = isExternallyPaused || isHitStopped
+            ? 0f
+            : presentationTimeScale;
     }
 }
