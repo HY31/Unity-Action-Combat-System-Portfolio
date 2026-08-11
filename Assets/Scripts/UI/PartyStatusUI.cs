@@ -1,6 +1,8 @@
-﻿using System;
+using System;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
+using DG.Tweening;
 
 /// <summary>
 /// PartyManager의 현재 멤버 순서를 기준으로 활성 캐릭터와 대기 캐릭터의 상태를 표시한다.
@@ -38,6 +40,10 @@ public sealed class PartyStatusUI : MonoBehaviour
     private float[] healthNormalized;
     private float[] healthCurrent;
     private float[] healthMaximum;
+
+    private readonly Dictionary<PlayerController, bool> energyReadyStates = new();
+    private PlayerController lastActiveMember;
+    private bool activeMemberInitialized;
 
     public void Bind(PartyManager manager, Sprite[] portraits = null)
     {
@@ -98,7 +104,14 @@ public sealed class PartyStatusUI : MonoBehaviour
 
         // PartyManager의 현재 인덱스를 기준으로 활성 슬롯과 다음/이전 대기 슬롯의 순서를 다시 만든다.
         PlayerController active = partyManager.GetCurrentCharacter();
+        bool activeChanged = activeMemberInitialized && active != lastActiveMember;
         ApplySlot(activeSlot, active, true);
+
+        if (activeChanged)
+            PlayActiveSlotTransition();
+
+        lastActiveMember = active;
+        activeMemberInitialized = true;
 
         if (reserveSlots == null)
             return;
@@ -164,6 +177,11 @@ public sealed class PartyStatusUI : MonoBehaviour
             : 0f;
         float threshold = ResolveEnergyThreshold(member);
         bool enhancedReady = energyNormalized >= threshold;
+        bool hadReadyState = energyReadyStates.TryGetValue(member, out bool wasReady);
+        energyReadyStates[member] = enhancedReady;
+
+        if (hadReadyState && !wasReady && enhancedReady)
+            PlayEnergyReadyPulse(slot);
 
         // 강화 스킬 진입 에너지를 게이지 마커 위치와 준비 색상에 함께 반영한다.
         if (slot.energyFill != null)
@@ -185,6 +203,57 @@ public sealed class PartyStatusUI : MonoBehaviour
         }
     }
 
+    private void PlayActiveSlotTransition()
+    {
+        if (activeSlot?.root == null)
+            return;
+
+        CanvasGroup group = activeSlot.root;
+        RectTransform rect = group.transform as RectTransform;
+
+        group.DOKill(false);
+        group.alpha = 0.45f;
+        group.DOFade(1f, 0.18f)
+            .SetEase(Ease.OutCubic)
+            .SetUpdate(true);
+
+        if (rect == null)
+            return;
+
+        rect.DOKill(false);
+        rect.localScale = Vector3.one * 0.96f;
+        rect.DOScale(Vector3.one, 0.2f)
+            .SetEase(Ease.OutBack)
+            .SetUpdate(true);
+    }
+
+    private static void PlayEnergyReadyPulse(SlotView slot)
+    {
+        if (slot == null)
+            return;
+
+        if (slot.energyFill != null)
+        {
+            RectTransform fillRect = slot.energyFill.rectTransform;
+            fillRect.DOKill(false);
+            fillRect.localScale = Vector3.one;
+            fillRect.DOPunchScale(
+                    new Vector3(0.04f, 0.22f, 0f),
+                    0.32f,
+                    9,
+                    0.55f)
+                .SetUpdate(true);
+        }
+
+        if (slot.energyThresholdMarker != null)
+        {
+            RectTransform marker = slot.energyThresholdMarker;
+            marker.DOKill(false);
+            marker.localScale = Vector3.one;
+            marker.DOPunchScale(Vector3.one * 0.35f, 0.3f, 8, 0.5f)
+                .SetUpdate(true);
+        }
+    }
     private float ResolveEnergyThreshold(PlayerController member)
     {
         if (member == null || member.MaxEnergy <= 0f || member.CharacterData == null)

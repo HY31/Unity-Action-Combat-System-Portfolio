@@ -1,4 +1,33 @@
-﻿using UnityEngine;
+using UnityEngine;
+
+[System.Serializable]
+public struct HitFeedbackData
+{
+    [Min(0f)] public float hitStopDuration;
+    [Min(0f)] public float cameraShakeDuration;
+    [Min(0f)] public float cameraShakeStrength;
+    [Min(1)] public int cameraShakeVibrato;
+    [Min(0.1f)] public float vfxScale;
+
+    public static HitFeedbackData Default => new HitFeedbackData
+    {
+        hitStopDuration = 0.05f,
+        cameraShakeDuration = 0.12f,
+        cameraShakeStrength = 0.08f,
+        cameraShakeVibrato = 18,
+        vfxScale = 1f
+    };
+
+    public HitFeedbackData Sanitized()
+    {
+        hitStopDuration = Mathf.Max(0f, hitStopDuration);
+        cameraShakeDuration = Mathf.Max(0f, cameraShakeDuration);
+        cameraShakeStrength = Mathf.Max(0f, cameraShakeStrength);
+        cameraShakeVibrato = Mathf.Max(1, cameraShakeVibrato);
+        vfxScale = Mathf.Max(0.1f, vfxScale);
+        return this;
+    }
+}
 
 public struct CombatHitData
 {

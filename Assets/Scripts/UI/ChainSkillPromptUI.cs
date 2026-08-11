@@ -1,6 +1,7 @@
-﻿using UnityEngine;
+using UnityEngine;
 using UnityEngine.Events;
 using UnityEngine.UI;
+using DG.Tweening;
 
 /// <summary>
 /// 적의 그로기 이벤트를 받아 제한 시간 동안 이전/다음 파티원의 체인 스킬 선택지를 표시한다.
@@ -30,6 +31,7 @@ public sealed class ChainSkillPromptUI : MonoBehaviour
     private float duration;
     private float remaining;
     private bool isOpen;
+    private Tween visibilityTween;
 
     public bool IsOpen => isOpen;
 
@@ -48,6 +50,7 @@ public sealed class ChainSkillPromptUI : MonoBehaviour
     private void OnDisable()
     {
         EnemyController.ChainSkillRequested -= HandleChainSkillRequested;
+        HideImmediate();
     }
 
     private void Update()
@@ -80,6 +83,8 @@ public sealed class ChainSkillPromptUI : MonoBehaviour
 
         SetCanvasVisible(true);
         RefreshTime();
+        PlayShowAnimation();
+        CombatPresentationEffects.BeginChainPrompt();
     }
 
     public void Select(int side)
@@ -89,7 +94,7 @@ public sealed class ChainSkillPromptUI : MonoBehaviour
 
         // 이 UI는 선택 결과만 알리고 실제 교체·스킬 실행은 전투 조정자가 결정한다.
         onSelected?.Invoke(Mathf.Clamp(side, 0, 1));
-        HideImmediate();
+        HideAnimated();
     }
 
     public void Cancel()
@@ -98,7 +103,7 @@ public sealed class ChainSkillPromptUI : MonoBehaviour
             return;
 
         onCancelled?.Invoke();
-        HideImmediate();
+        HideAnimated();
     }
 
     public void Configure(
@@ -139,11 +144,63 @@ public sealed class ChainSkillPromptUI : MonoBehaviour
         }
     }
 
-    private void HideImmediate()
+    private void PlayShowAnimation()
+    {
+        if (canvasGroup == null)
+            return;
+
+        visibilityTween?.Kill(false);
+        canvasGroup.alpha = 0f;
+        canvasGroup.transform.localScale = Vector3.one * 0.92f;
+
+        visibilityTween = DOTween.Sequence()
+            .Join(canvasGroup.DOFade(1f, 0.16f).SetEase(Ease.OutCubic))
+            .Join(canvasGroup.transform
+                .DOScale(Vector3.one, 0.2f)
+                .SetEase(Ease.OutBack))
+            .SetUpdate(true);
+    }
+
+    private void HideAnimated()
     {
         isOpen = false;
         remaining = 0f;
+        CombatPresentationEffects.EndChainPrompt();
+
+        if (canvasGroup == null)
+            return;
+
+        canvasGroup.interactable = false;
+        canvasGroup.blocksRaycasts = false;
+        visibilityTween?.Kill(false);
+
+        visibilityTween = DOTween.Sequence()
+            .Join(canvasGroup.DOFade(0f, 0.12f).SetEase(Ease.InCubic))
+            .Join(canvasGroup.transform
+                .DOScale(Vector3.one * 0.96f, 0.12f)
+                .SetEase(Ease.InCubic))
+            .SetUpdate(true)
+            .OnComplete(() =>
+            {
+                canvasGroup.transform.localScale = Vector3.one;
+                SetCanvasVisible(false);
+            });
+    }
+    private void HideImmediate()
+    {
+        bool wasOpen = isOpen;
+        isOpen = false;
+        remaining = 0f;
+        visibilityTween?.Kill(false);
+        visibilityTween = null;
+
+        if (canvasGroup != null)
+            canvasGroup.transform.localScale = Vector3.one;
+
         SetCanvasVisible(false);
+
+        if (wasOpen)
+            CombatPresentationEffects.EndChainPrompt();
     }
 
     private void SetCanvasVisible(bool visible)

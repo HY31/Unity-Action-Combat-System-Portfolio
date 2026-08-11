@@ -1,8 +1,9 @@
-﻿using UnityEngine;
+using UnityEngine;
 using DG.Tweening;
 
 public class ThirdPersonCameraController : MonoBehaviour
 {
+    public static ThirdPersonCameraController Active { get; private set; }
     [Header("Target")]
     [SerializeField] private Transform target;
     [SerializeField] private Transform yawPivot;
@@ -31,17 +32,66 @@ public class ThirdPersonCameraController : MonoBehaviour
     [SerializeField] private float collisionRadius = 0.2f;
     [SerializeField] private float collisionOffset = 0.1f;
 
+    [Header("Parry Presentation")]
+    [SerializeField] private Vector3 parryCameraOffset = new Vector3(0.42f, -0.32f, 0.15f);
+    [SerializeField] private float parryDistanceOffset = -1.45f;
+    [SerializeField] private float parryPitch = -2f;
+    [SerializeField] private float parryYawOffset = -5f;
+    [SerializeField, Min(1f)] private float parryRightYawMultiplier = 1.6f;
+    [SerializeField] private float parryEnterDuration = 0.16f;
+    [SerializeField] private float parryHoldDuration = 0.65f;
+    [SerializeField] private float parryReturnDuration = 0.7f;
+    [SerializeField, Range(0f, 1f)] private float parryAimStrength = 0.95f;
+    [SerializeField] private float parryFieldOfViewDelta = -8f;
+    [SerializeField] private float parryImpactFieldOfViewDelta = -3f;
+    [SerializeField] private float parryImpactZoomInDuration = 0.035f;
+    [SerializeField] private float parryImpactZoomOutDuration = 0.2f;
+
     private float yaw;
     private float pitch;
     private float targetDistance;
     private float currentDistance;
 
     private Tween shakeTween;
+    private Tween impactRotationTween;
+    private Tween fovTween;
+    private Tween parryCameraTween;
+    private float baseFieldOfView;
+
+    private Vector3 presentationCameraOffset;
+    private float presentationDistanceOffset;
+    private float presentationAimWeight;
+    private float presentationTargetYaw;
+    private float presentationTargetPitch;
+    private float parryCameraSide = 1f;
+
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+    private static void ResetStaticState()
+    {
+        Active = null;
+    }
 
     private void Awake()
     {
+        Active = this;
         targetDistance = defaultDistance;
         currentDistance = defaultDistance;
+        baseFieldOfView = cam != null ? cam.fieldOfView : 60f;
+
+        // 마스크를 비워 둔 씬에서도 최소한 기본 환경 지형과는 충돌하게 한다.
+        if (collisionMask.value == 0)
+            collisionMask = 1 << 0;
+    }
+
+    private void OnDestroy()
+    {
+        if (Active == this)
+            Active = null;
+
+        shakeTween?.Kill();
+        impactRotationTween?.Kill();
+        fovTween?.Kill();
+        parryCameraTween?.Kill();
     }
 
     private void Start()
@@ -116,39 +166,52 @@ public class ThirdPersonCameraController : MonoBehaviour
 
     private void ApplyRotation()
     {
-        yawPivot.rotation = Quaternion.Euler(0f, yaw, 0f);
-        pitchPivot.localRotation = Quaternion.Euler(pitch, 0f, 0f);
+        float resolvedYaw = Mathf.LerpAngle(yaw, presentationTargetYaw, presentationAimWeight);
+        float resolvedPitch = Mathf.Lerp(pitch, presentationTargetPitch, presentationAimWeight);
+
+        yawPivot.rotation = Quaternion.Euler(0f, resolvedYaw, 0f);
+        pitchPivot.localRotation = Quaternion.Euler(resolvedPitch, 0f, 0f);
     }
 
     private void HandleCameraCollision()
     {
         Vector3 pivotPos = pitchPivot.position;
-        Vector3 desiredCameraLocalPos = new Vector3(0f, 0f, -targetDistance);
+        float desiredDistance = Mathf.Max(
+            collisionRadius + collisionOffset,
+            targetDistance + presentationDistanceOffset);
+        Vector3 desiredCameraLocalPos = new Vector3(
+            presentationCameraOffset.x,
+            presentationCameraOffset.y,
+            -desiredDistance + presentationCameraOffset.z);
 
         Vector3 desiredWorldPos = pitchPivot.TransformPoint(desiredCameraLocalPos);
         Vector3 direction = desiredWorldPos - pivotPos;
         float distance = direction.magnitude;
+        Vector3 finalCameraLocalPos = desiredCameraLocalPos;
 
-        direction.Normalize();
-
-        float finalDistance = targetDistance;
-
-        // 피벗에서 희망 카메라 위치까지 구를 쏴 벽에 닿으면 카메라만 앞으로 당긴다.
-        if (Physics.SphereCast(
+        // 패링 숄더 오프셋까지 포함한 실제 경로를 검사해 바닥이나 벽 앞에서 멈춘다.
+        if (distance > 0.0001f && Physics.SphereCast(
                 pivotPos,
                 collisionRadius,
-                direction,
+                direction / distance,
                 out RaycastHit hit,
                 distance,
                 collisionMask,
                 QueryTriggerInteraction.Ignore))
         {
-            finalDistance = hit.distance - collisionOffset;
-            finalDistance = Mathf.Clamp(finalDistance, minDistance, targetDistance);
+            float safeDistance = Mathf.Max(
+                collisionRadius,
+                hit.distance - collisionOffset);
+            Vector3 safeWorldPosition = pivotPos + direction.normalized * safeDistance;
+            finalCameraLocalPos = pitchPivot.InverseTransformPoint(safeWorldPosition);
         }
 
-        currentDistance = Mathf.Lerp(currentDistance, finalDistance, zoomSmooth * Time.deltaTime);
-        cam.transform.localPosition = new Vector3(0f, 0f, -currentDistance);
+        float smoothing = 1f - Mathf.Exp(-zoomSmooth * Time.unscaledDeltaTime);
+        cam.transform.localPosition = Vector3.Lerp(
+            cam.transform.localPosition,
+            finalCameraLocalPos,
+            smoothing);
+        currentDistance = -cam.transform.localPosition.z;
     }
 
     public Vector3 GetCameraPlanarForward()
@@ -180,5 +243,231 @@ public class ThirdPersonCameraController : MonoBehaviour
             {
                 pitchPivot.localPosition = Vector3.zero;
             });
+    }
+    public void ShakeImpact(
+        Vector3 worldDirection,
+        float duration = 0.12f,
+        float strength = 0.08f,
+        int vibrato = 18)
+    {
+        Shake(duration, strength, vibrato);
+
+        if (cam == null || duration <= 0f || strength <= 0f)
+            return;
+
+        Vector3 direction = worldDirection.sqrMagnitude > 0.0001f
+            ? worldDirection.normalized
+            : transform.forward;
+        Vector3 localDirection = cam.transform.InverseTransformDirection(direction);
+
+        impactRotationTween?.Kill();
+        cam.transform.localRotation = Quaternion.identity;
+
+        Vector3 punchEuler = new Vector3(
+            -strength * 24f,
+            -localDirection.x * strength * 38f,
+            localDirection.x * strength * 30f);
+
+        impactRotationTween = cam.transform
+            .DOPunchRotation(punchEuler, duration, Mathf.Max(1, vibrato), 0.55f)
+            .SetUpdate(true)
+            .OnComplete(() => cam.transform.localRotation = Quaternion.identity);
+    }
+
+    public void PunchFieldOfView(float delta, float duration = 0.3f)
+    {
+        if (cam == null || duration <= 0f)
+            return;
+
+        fovTween?.Kill();
+        cam.fieldOfView = baseFieldOfView;
+
+        float peakFieldOfView = Mathf.Clamp(baseFieldOfView + delta, 25f, 100f);
+        float attackDuration = duration * 0.35f;
+        float releaseDuration = duration - attackDuration;
+
+        fovTween = DOTween.Sequence()
+            .Append(DOTween.To(
+                () => cam.fieldOfView,
+                value => cam.fieldOfView = value,
+                peakFieldOfView,
+                attackDuration).SetEase(Ease.OutQuad))
+            .Append(DOTween.To(
+                () => cam.fieldOfView,
+                value => cam.fieldOfView = value,
+                baseFieldOfView,
+                releaseDuration).SetEase(Ease.OutCubic))
+            .SetUpdate(true);
+    }
+
+    public void PunchParryImpact()
+    {
+        if (cam == null)
+            return;
+
+        fovTween?.Kill(false);
+
+        float parryFieldOfView = Mathf.Clamp(
+            baseFieldOfView + parryFieldOfViewDelta,
+            25f,
+            100f);
+        float impactFieldOfView = Mathf.Clamp(
+            parryFieldOfView + parryImpactFieldOfViewDelta,
+            25f,
+            100f);
+
+        fovTween = DOTween.Sequence()
+            .Append(cam.DOFieldOfView(
+                impactFieldOfView,
+                Mathf.Max(0.01f, parryImpactZoomInDuration)).SetEase(Ease.OutQuad))
+            .Append(cam.DOFieldOfView(
+                parryFieldOfView,
+                Mathf.Max(0.01f, parryImpactZoomOutDuration)).SetEase(Ease.OutCubic))
+            .SetUpdate(true);
+    }
+    public void PlayParryCamera(Transform actor, Transform enemy)
+    {
+        if (actor == null || enemy == null || cam == null || pitchPivot == null)
+            return;
+
+        parryCameraTween?.Kill(false);
+        fovTween?.Kill(false);
+
+        Vector3 planarDirection = enemy.position - actor.position;
+        planarDirection.y = 0f;
+
+        // 교대 직전 카메라가 캐릭터의 어느 쪽에 있었는지 보존한다.
+        // 이후 목표를 새 캐릭터로 바꿔도 같은 쪽 아래에서 패링을 보여 준다.
+        Vector3 actorToCamera = cam.transform.position - actor.position;
+        actorToCamera.y = 0f;
+        float sideDot = Vector3.Dot(actorToCamera, actor.right);
+        if (Mathf.Abs(sideDot) > 0.05f)
+            parryCameraSide = Mathf.Sign(sideDot);
+
+        float yawMagnitude = Mathf.Abs(parryYawOffset);
+        if (parryCameraSide > 0f)
+            yawMagnitude *= parryRightYawMultiplier;
+
+        float signedYawOffset = -parryCameraSide * yawMagnitude;
+        Vector3 signedCameraOffset = parryCameraOffset;
+        signedCameraOffset.x = parryCameraSide * Mathf.Abs(parryCameraOffset.x);
+
+        presentationTargetYaw = planarDirection.sqrMagnitude > 0.0001f
+            ? Mathf.Atan2(planarDirection.x, planarDirection.z) * Mathf.Rad2Deg + signedYawOffset
+            : yaw;
+        presentationTargetPitch = Mathf.Clamp(parryPitch, minPitch, maxPitch);
+
+        float aimPeak = Mathf.Clamp01(parryAimStrength);
+        float enterDuration = Mathf.Max(0.01f, parryEnterDuration);
+        float targetFieldOfView = Mathf.Clamp(
+            baseFieldOfView + parryFieldOfViewDelta,
+            25f,
+            100f);
+
+        // 준비 구간에서 기억한 측면 구도로 회전하고, 낮은 숄더 이동과 거리/FOV 확대를 동시에 적용한다.
+        parryCameraTween = DOTween.Sequence()
+            .Append(DOTween.To(
+                () => presentationCameraOffset,
+                value => presentationCameraOffset = value,
+                signedCameraOffset,
+                enterDuration).SetEase(Ease.OutCubic))
+            .Join(DOTween.To(
+                () => presentationAimWeight,
+                value => presentationAimWeight = value,
+                aimPeak,
+                enterDuration).SetEase(Ease.OutCubic))
+            .Join(DOTween.To(
+                () => presentationDistanceOffset,
+                value => presentationDistanceOffset = value,
+                parryDistanceOffset,
+                enterDuration).SetEase(Ease.OutCubic))
+            .Join(cam.DOFieldOfView(
+                targetFieldOfView,
+                enterDuration).SetEase(Ease.OutCubic))
+            .SetUpdate(true);
+    }
+
+    public void ResolveParryCamera()
+    {
+        parryCameraTween?.Kill(false);
+
+        float holdDuration = Mathf.Max(0f, parryHoldDuration);
+        float returnDuration = Mathf.Max(0.01f, parryReturnDuration);
+
+        // 충돌 프레임을 잠깐 붙잡은 뒤 모든 구도 값을 같은 시간축으로 복구한다.
+        parryCameraTween = DOTween.Sequence()
+            .AppendInterval(holdDuration)
+            .Append(DOTween.To(
+                () => presentationCameraOffset,
+                value => presentationCameraOffset = value,
+                Vector3.zero,
+                returnDuration).SetEase(Ease.InOutCubic))
+            .Join(DOTween.To(
+                () => presentationAimWeight,
+                value => presentationAimWeight = value,
+                0f,
+                returnDuration).SetEase(Ease.InOutCubic))
+            .Join(DOTween.To(
+                () => presentationDistanceOffset,
+                value => presentationDistanceOffset = value,
+                0f,
+                returnDuration).SetEase(Ease.InOutCubic))
+            .Join(cam.DOFieldOfView(
+                baseFieldOfView,
+                returnDuration).SetEase(Ease.InOutCubic))
+            .SetUpdate(true)
+            .OnComplete(ResetParryCamera);
+    }
+
+    public void EndParryCamera(float returnDuration = 0.12f)
+    {
+        parryCameraTween?.Kill(false);
+
+        bool framingAlreadyReset =
+            presentationCameraOffset.sqrMagnitude <= 0.000001f &&
+            Mathf.Abs(presentationDistanceOffset) <= 0.001f &&
+            presentationAimWeight <= 0.001f &&
+            (cam == null || Mathf.Abs(cam.fieldOfView - baseFieldOfView) <= 0.01f);
+
+        if (framingAlreadyReset)
+        {
+            ResetParryCamera();
+            return;
+        }
+
+        float duration = Mathf.Max(0.01f, returnDuration);
+        parryCameraTween = DOTween.Sequence()
+            .Append(DOTween.To(
+                () => presentationCameraOffset,
+                value => presentationCameraOffset = value,
+                Vector3.zero,
+                duration).SetEase(Ease.OutCubic))
+            .Join(DOTween.To(
+                () => presentationAimWeight,
+                value => presentationAimWeight = value,
+                0f,
+                duration).SetEase(Ease.OutCubic))
+            .Join(DOTween.To(
+                () => presentationDistanceOffset,
+                value => presentationDistanceOffset = value,
+                0f,
+                duration).SetEase(Ease.OutCubic))
+            .Join(cam.DOFieldOfView(
+                baseFieldOfView,
+                duration).SetEase(Ease.OutCubic))
+            .SetUpdate(true)
+            .OnComplete(ResetParryCamera);
+    }
+
+    private void ResetParryCamera()
+    {
+        presentationCameraOffset = Vector3.zero;
+        presentationDistanceOffset = 0f;
+        presentationAimWeight = 0f;
+        presentationTargetYaw = yaw;
+        presentationTargetPitch = pitch;
+
+        if (cam != null)
+            cam.fieldOfView = baseFieldOfView;
     }
 }

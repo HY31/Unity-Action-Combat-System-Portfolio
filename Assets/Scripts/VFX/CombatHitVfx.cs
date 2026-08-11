@@ -1,4 +1,4 @@
-﻿using UnityEngine;
+using UnityEngine;
 
 public sealed class CombatHitVfx : MonoBehaviour
 {
@@ -30,6 +30,15 @@ public sealed class CombatHitVfx : MonoBehaviour
 
     public static void Play(Vector3 position, Vector3 travelDirection, CombatElement element)
     {
+        Play(position, travelDirection, element, 1f);
+    }
+
+    public static void Play(
+        Vector3 position,
+        Vector3 travelDirection,
+        CombatElement element,
+        float feedbackScale)
+    {
         if (instance == null)
         {
             instance = FindFirstObjectByType<CombatHitVfx>();
@@ -41,7 +50,7 @@ public sealed class CombatHitVfx : MonoBehaviour
             }
         }
 
-        instance.EmitHit(position, travelDirection, element);
+        instance.EmitHit(position, travelDirection, element, feedbackScale);
     }
 
     private void Awake()
@@ -70,7 +79,11 @@ public sealed class CombatHitVfx : MonoBehaviour
         DestroyRuntimeObject(sparkTexture);
     }
 
-    private void EmitHit(Vector3 position, Vector3 travelDirection, CombatElement element)
+    private void EmitHit(
+        Vector3 position,
+        Vector3 travelDirection,
+        CombatElement element,
+        float feedbackScale)
     {
         EnsureInitialized();
 
@@ -83,18 +96,21 @@ public sealed class CombatHitVfx : MonoBehaviour
 
         Color elementColor = ResolveElementColor(element);
         Color coreColor = Color.Lerp(Color.white, elementColor, 0.25f);
+        float scale = Mathf.Clamp(feedbackScale, 0.1f, 3f);
 
-        EmitParticle(flashParticles, position, Vector3.zero, coreColor, 1.2f, 0.09f);
-        EmitParticle(flashParticles, position, Vector3.zero, elementColor, 1.8f, 0.13f);
-        EmitParticle(ringParticles, position, Vector3.zero, elementColor, 2.1f, 0.18f);
+        EmitParticle(flashParticles, position, Vector3.zero, coreColor, 1.2f * scale, 0.09f);
+        EmitParticle(flashParticles, position, Vector3.zero, elementColor, 1.8f * scale, 0.13f);
+        EmitParticle(ringParticles, position, Vector3.zero, elementColor, 2.1f * scale, 0.18f);
 
-        for (int i = 0; i < 14; i++)
+        int sparkCount = Mathf.Clamp(Mathf.RoundToInt(14f * scale), 8, 28);
+
+        for (int i = 0; i < sparkCount; i++)
         {
             // 전투 AI가 사용하는 UnityEngine.Random 상태를 건드리지 않도록 VFX 전용 난수를 사용한다.
             Vector3 spread = NextUnitVector();
             Vector3 sparkDirection = (spread + direction * 0.4f).normalized;
             float speed = Mathf.Lerp(4.5f, 10.5f, NextFloat());
-            float size = Mathf.Lerp(0.035f, 0.075f, NextFloat());
+            float size = Mathf.Lerp(0.035f, 0.075f, NextFloat()) * scale;
             float lifetime = Mathf.Lerp(0.1f, 0.22f, NextFloat());
 
             EmitParticle(
