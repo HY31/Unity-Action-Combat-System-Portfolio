@@ -1,4 +1,4 @@
-﻿using UnityEngine;
+using UnityEngine;
 
 public class AttackState : IPlayerState
 {
@@ -32,6 +32,7 @@ public class AttackState : IPlayerState
     private bool hasAttackAssist;
     private float previousMovementTime;
     private float baseAnimatorSpeed = 1f;
+    private bool attackSwingPlayed;
 
     public AttackState(PlayerController player)
     {
@@ -57,10 +58,7 @@ public class AttackState : IPlayerState
             return;
         }
 
-        if (hitBox == null)
-        {
-            hitBox = player.GetComponentInChildren<HitBox>(true);
-        }
+        hitBox = player.AttackHitBox;
 
         StartAttack(player.CharacterData.normalCombo[comboIndex]);
     }
@@ -131,6 +129,7 @@ public class AttackState : IPlayerState
         currentAttack = attackData;
         phase = AttackPhase.Attack;
         previousMovementTime = 0f;
+        attackSwingPlayed = false;
 
         if (hitBox == null)
         {
@@ -157,6 +156,8 @@ public class AttackState : IPlayerState
 
         hitBox.SetRewardType(DecibelRewardType.NormalAttack);
         hitBox.SetHitData(hitData);
+        hitBox.SetFeedback(currentAttack.hitFeedback);
+        hitBox.ConfigureShape(currentAttack.hitBoxShape);
         SetHitBoxActive(false);
         ResolveAttackAssist();
 
@@ -174,6 +175,7 @@ public class AttackState : IPlayerState
 
         float t = info.normalizedTime;
 
+        UpdateAttackSwing(t);
         UpdateAttackAssist(t);
 
         // 루트 모션 대신 애니메이션 정규화 시간에 맞춰 결정론적으로 전진시킨다.
@@ -191,13 +193,15 @@ public class AttackState : IPlayerState
         if (TryCancelToSkill(t))
             return;
 
-        // 허용 시점 전에 들어온 버퍼 입력까지 포함해 콤보 전환을 시도한다.
-        if (t >= currentAttack.comboInputOpenTime)
-        {
-            TryChainCombo();
-        }
+        // 다음 공격이 시작됐다면 이전 공격의 시간축 처리를 같은 프레임에 계속하지 않는다.
+        if (t >= currentAttack.comboInputOpenTime && TryChainCombo())
+            return;
 
-        // 본 공격이 끝나면 별도 회복 모션으로 넘어가고, 해당 모션의 설정 시점부터 이동을 허용한다.
+        // 콤보 예약이 없고 이동 허용 시점에 도달했다면 후속 모션을 이동으로 취소한다.
+        if (TryCancelToLocomotion(t))
+            return;
+
+        // 본 공격이 끝나면 별도 회복 모션으로 넘어간다.
         if (t >= currentAttack.endTransitionTime)
         {
             SetHitBoxActive(false);
@@ -206,15 +210,30 @@ public class AttackState : IPlayerState
         }
     }
 
+    private void UpdateAttackSwing(float normalizedTime)
+    {
+        if (attackSwingPlayed || currentAttack == null)
+            return;
+
+        float swingTime = Mathf.Max(0f, currentAttack.startUpEnd - 0.12f);
+        if (normalizedTime < swingTime)
+            return;
+
+        attackSwingPlayed = true;
+        CombatAudio.PlayAttackSwing(currentAttack.hitPayload.impactMultiplier);
+    }
+
     private void UpdateEndPhase(AnimatorStateInfo info)
     {
-        // 공격 본체가 종료된 뒤 들어온 회피는 End 모션을 기다리지 않고 즉시 실행한다.
-        if (bufferedDodgeInput)
-        {
-            bufferedDodgeInput = false;
-            player.ChangeState(player.DodgeState);
+        // 공격 본체가 끝났으므로 모든 일반 캔슬 시간은 통과한 것으로 취급한다.
+        if (TryCancelToDodge(1f))
             return;
-        }
+
+        if (TryCancelToSkill(1f))
+            return;
+
+        if (TryCancelToLocomotion(1f))
+            return;
 
         if (!info.IsName(currentAttack.endAnim))
             return;
@@ -255,21 +274,53 @@ public class AttackState : IPlayerState
         return true;
     }
 
-    private void TryChainCombo()
+    private bool HasValidBufferedCombo()
     {
         if (!bufferedAttackInput)
-            return;
+            return false;
 
-        // 예약 입력은 유효한 다음 콤보가 있는지와 관계없이 한 번만 소비한다.
+        if (player.CharacterData.normalCombo == null)
+            return false;
+
+        int nextIndex = currentAttack.nextComboIndex;
+
+        return nextIndex >= 0 &&
+            nextIndex < player.CharacterData.normalCombo.Length;
+    }
+
+    private bool TryCancelToLocomotion(float normalizedTime)
+    {
+        if (normalizedTime < currentAttack.locomotionCancelOpenTime)
+            return false;
+
+        // 다음 평타가 유효하게 예약되어 있다면 이동보다 콤보를 우선한다.
+        if (HasValidBufferedCombo())
+            return false;
+
+        // 이동은 지속 입력이므로 별도의 버튼 버퍼를 만들지 않고 현재 입력을 확인한다.
+        if (player.MoveInput.sqrMagnitude <= 0.0001f)
+            return false;
+
+        player.ChangeState(player.LocomotionState);
+        return true;
+    }
+
+    private bool TryChainCombo()
+    {
+        if (!bufferedAttackInput)
+            return false;
+
+        // 예약은 다음 콤보의 존재 여부와 관계없이 한 번만 소비한다.
         bufferedAttackInput = false;
 
         int nextIndex = currentAttack.nextComboIndex;
 
         if (nextIndex < 0 || nextIndex >= player.CharacterData.normalCombo.Length)
-            return;
+            return false;
 
         comboIndex = nextIndex;
         StartAttack(player.CharacterData.normalCombo[comboIndex]);
+        return true;
     }
 
     private void SetHitBoxActive(bool active)

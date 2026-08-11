@@ -1,4 +1,4 @@
-﻿using UnityEngine;
+using UnityEngine;
 
 // AI가 붙는 보스 루트에는 공격 실행기와 이동용 Rigidbody가 반드시 함께 있어야 한다.
 [RequireComponent(typeof(EnemyController), typeof(Rigidbody))]
@@ -52,6 +52,8 @@ public class EnemyCombatAI : MonoBehaviour
     private void Update()
     {
         RefreshTarget();
+        enemyController.SetAttackTarget(
+            targetPlayer != null ? targetPlayer.transform : null);
         UpdateAttackDecision();
     }
 
@@ -64,9 +66,10 @@ public class EnemyCombatAI : MonoBehaviour
             return;
         }
 
-        if (enemyController.IsGroggy)
+        if (enemyController.IsGroggy || enemyController.IsInHitReaction)
         {
-            SetMovementAnimation(false);
+            // 경직·그로기 애니메이션은 EnemyController가 소유하므로 이동 애니메이션으로 덮지 않는다.
+            isMoving = false;
             return;
         }
 
@@ -157,7 +160,9 @@ public class EnemyCombatAI : MonoBehaviour
         if (targetPlayer == null)
             return;
 
-        if (enemyController.IsAttacking || enemyController.IsGroggy)
+        if (enemyController.IsAttacking ||
+            enemyController.IsGroggy ||
+            enemyController.IsInHitReaction)
             return;
 
         Vector3 direction = targetPlayer.transform.position - enemyRigidbody.position;
@@ -185,14 +190,15 @@ public class EnemyCombatAI : MonoBehaviour
             return;
 
         if (enemyController.TryStartAttack())
-            ResetAttackCooldown();
+            ResetAttackCooldown(enemyController.CurrentAttackRecoveryDelay);
     }
 
-    private void ResetAttackCooldown()
+    private void ResetAttackCooldown(float additionalDelay = 0f)
     {
         float minimum = Mathf.Min(minAttackCooldown, maxAttackCooldown);
         float maximum = Mathf.Max(minAttackCooldown, maxAttackCooldown);
 
-        attackCooldownRemaining = Random.Range(minimum, maximum);
+        attackCooldownRemaining =
+            Random.Range(minimum, maximum) + Mathf.Max(0f, additionalDelay);
     }
 }

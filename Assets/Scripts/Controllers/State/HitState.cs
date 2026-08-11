@@ -1,9 +1,10 @@
-﻿using UnityEngine;
+using UnityEngine;
 
 public class HitState : IPlayerState, IUltimateBlockingState
 {
     private PlayerController player;
-    private float hitDuration = 0.5f;
+    private const float LightHitDuration = 0.42f;
+    private const float HeavyHitDuration = 0.58f;
     private float timer;
 
     public HitState(PlayerController player)
@@ -13,9 +14,16 @@ public class HitState : IPlayerState, IUltimateBlockingState
 
     public void Enter()
     {
-        Debug.Log("피격 상태 진입");
-        timer = hitDuration;
-        player.Animator.CrossFade(player.CharacterData.hitLightFrontAnim, 0.05f);
+        timer = player.LastHitWasHeavy ? HeavyHitDuration : LightHitDuration;
+        player.SetCurrentSpeed(0f);
+
+        string hitAnimation = player.LastHitWasHeavy &&
+            !string.IsNullOrEmpty(player.CharacterData.hitHeavyFrontAnim)
+            ? player.CharacterData.hitHeavyFrontAnim
+            : player.CharacterData.hitLightFrontAnim;
+
+        if (!string.IsNullOrEmpty(hitAnimation))
+            player.Animator.CrossFade(hitAnimation, 0.04f);
     }
     public void Update()
     {
@@ -28,7 +36,6 @@ public class HitState : IPlayerState, IUltimateBlockingState
     }
     public void Exit()
     {
-        Debug.Log("피격 상태 종료");
     }
 
     #region Handle

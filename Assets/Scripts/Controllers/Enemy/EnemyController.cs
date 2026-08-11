@@ -1,17 +1,20 @@
-﻿using UnityEngine;
+using System.Collections.Generic;
+using UnityEngine;
+using DG.Tweening;
 
 public class EnemyController : MonoBehaviour
 {
     private enum EnemyAttackPhase
     {
         None,
-        Attack
+        Attack,
+        FollowUp
     }
 
     [SerializeField] private SupportPointManager supportPointManager;
     [SerializeField] private EnemyData enemyData;
     public EnemyData EnemyData => enemyData;
-    
+
     [Header("Stats")]
     [SerializeField] private float currentHp = 100f;
     [SerializeField] private float currentStun = 0f;
@@ -20,6 +23,9 @@ public class EnemyController : MonoBehaviour
 
     [Header("Hit Reaction")]
     [SerializeField] private float currentHitReactionGauge = 0f;
+    [SerializeField] private bool isInHitReaction;
+    private float hitReactionTimeRemaining;
+    private bool groggyLoopStarted;
 
     [Header("Attributes")]
     [SerializeField] private CombatElement currentAnomalyElement = CombatElement.None;
@@ -33,7 +39,12 @@ public class EnemyController : MonoBehaviour
     public float CurrentHp => currentHp;
     public float CurrentStun => currentStun;
     public float CurrentHitReactionGauge => currentHitReactionGauge;
+    public bool IsInHitReaction => isInHitReaction;
     public bool IsGroggy => isGroggy;
+    public float CurrentAttackRecoveryDelay =>
+        currentAttack != null
+        ? Mathf.Max(0f, currentAttack.additionalRecoveryDelay)
+        : 0f;
     public float GroggyTimeRemaining => groggyTimeRemaining;
     public float CurrentDamageTakenMultiplier =>
         isGroggy && enemyData != null
@@ -61,19 +72,61 @@ public class EnemyController : MonoBehaviour
     public CombatElement DisplayAnomalyElement => currentAnomalyElement;
 
     public Animator animator;
+    private float baseAnimatorSpeed = 1f;
+    private Rigidbody enemyRigidbody;
+
+    private Vector3 attackMoveDirection;
+    private float previousAttackMovementTime;
+    private float pendingAttackMoveDistance;
+
     private EnemyAttackData currentAttack;
+    private EnemyAttackData lastAttack;
+    private readonly Dictionary<EnemyAttackData, float> patternReadyTimes =
+        new Dictionary<EnemyAttackData, float>();
+    private bool attackSwingPlayed;
     public HitBox attackHitBox;
+    private BoxCollider attackBoxCollider;
+    private Vector3 defaultAttackHitBoxCenter;
+    private Vector3 defaultAttackHitBoxSize;
+
+    private Transform attackTarget;
+    private bool attackTrackingActive;
+    private Vector3 attackTrackingDirection;
+    private float attackTrackingRotationSpeed;
 
     [SerializeField] GameObject warningSign_Yellow;
     [SerializeField] GameObject warningSign_Red;
 
+    private Vector3 warningYellowBaseScale = Vector3.one;
+    private Vector3 warningRedBaseScale = Vector3.one;
+    private bool warningYellowVisible;
+    private bool warningRedVisible;
+    private Tween warningYellowTween;
+    private Tween warningRedTween;
+
     public WarningType CurrentWarningType => currentAttack != null ? currentAttack.warningType : WarningType.None;
 
-    public bool IsAttacking => phase == EnemyAttackPhase.Attack;
+    public bool IsAttacking => phase != EnemyAttackPhase.None;
 
     public bool IsInWarningWindow { get; private set; }
     public bool IsInActiveWindow { get; private set; }
     public bool IsInReactionWindow { get; private set; }
+    public WarningType VisibleWarningType
+    {
+        get
+        {
+            if (warningSign_Yellow != null && warningSign_Yellow.activeInHierarchy)
+                return WarningType.Yellow;
+
+            if (warningSign_Red != null && warningSign_Red.activeInHierarchy)
+                return WarningType.Red;
+
+            return WarningType.None;
+        }
+    }
+
+    public bool IsParryWarningVisible => VisibleWarningType == WarningType.Yellow;
+    public bool IsAnyWarningVisible => VisibleWarningType != WarningType.None;
 
     EnemyAttackPhase phase;
 
@@ -87,6 +140,24 @@ public class EnemyController : MonoBehaviour
             enabled = false;
             return;
         }
+
+        if (animator != null)
+            baseAnimatorSpeed = animator.speed;
+
+        enemyRigidbody = GetComponent<Rigidbody>();
+
+        if (attackHitBox != null)
+        {
+            attackBoxCollider = attackHitBox.GetComponent<BoxCollider>();
+
+            if (attackBoxCollider != null)
+            {
+                defaultAttackHitBoxCenter = attackBoxCollider.center;
+                defaultAttackHitBoxSize = attackBoxCollider.size;
+            }
+        }
+
+        InitializeWarningSigns();
 
         currentHp = enemyData.maxHp;
         currentStun = 0f;
@@ -106,9 +177,21 @@ public class EnemyController : MonoBehaviour
         new EnemyAnomalyState { element = CombatElement.Ether, gauge = 0f }
     };
     }
+    private void OnDestroy()
+    {
+        warningYellowTween?.Kill(false);
+        warningRedTween?.Kill(false);
+    }
+
     private void Update()
     {
         UpdateHitReactionGauge();
+
+        if (isInHitReaction)
+        {
+            UpdateHitReaction();
+            return;
+        }
 
         if (isGroggy)
         {
@@ -121,7 +204,7 @@ public class EnemyController : MonoBehaviour
             TryStartAttack();
         }
 
-        if (phase == EnemyAttackPhase.Attack)
+        if (phase != EnemyAttackPhase.None)
         {
             UpdateAttack(animator.GetCurrentAnimatorStateInfo(0));
         }
@@ -150,14 +233,17 @@ public class EnemyController : MonoBehaviour
             0f,
             enemyData.maxHitReactionGauge);
 
-        Debug.Log(
-            $"{name} 경직 게이지 = " +
-            $"{currentHitReactionGauge:F1} / {enemyData.maxHitReactionGauge:F1}");
+        if (currentHitReactionGauge >= enemyData.hitReactionThreshold)
+            BeginHitReaction();
     }
 
+    public void SetAttackTarget(Transform target)
+    {
+        attackTarget = target;
+    }
     public bool TryStartAttack()
     {
-        if (isGroggy || IsAttacking)
+        if (isGroggy || isInHitReaction || IsAttacking)
             return false;
 
         if (enemyData == null || animator == null || attackHitBox == null)
@@ -166,34 +252,168 @@ public class EnemyController : MonoBehaviour
         if (enemyData.attackPatterns == null || enemyData.attackPatterns.Length == 0)
             return false;
 
-        EnemyAttackData selectedAttack =
-            enemyData.attackPatterns[Random.Range(0, enemyData.attackPatterns.Length)];
+        EnemyAttackData selectedAttack = SelectAttackPattern();
 
-        if (selectedAttack == null || string.IsNullOrEmpty(selectedAttack.attackAnim))
+        if (selectedAttack == null)
             return false;
 
         currentAttack = selectedAttack;
+        lastAttack = selectedAttack;
+        BeginPatternSelectionCooldown(selectedAttack);
+        attackSwingPlayed = false;
+        ConfigureAttackHitBox(false);
+        attackHitBox.SetFeedback(currentAttack.hitFeedback);
         phase = EnemyAttackPhase.Attack;
 
+        BeginAttackMovement();
+
         attackHitBox.SetActive(false);
+
+        float playbackSpeed = Mathf.Max(
+            0.01f,
+            currentAttack.playbackSpeed);
+
+        animator.speed = baseAnimatorSpeed * playbackSpeed;
         animator.CrossFade(currentAttack.attackAnim, 0.05f);
 
         return true;
     }
 
+    private EnemyAttackData SelectAttackPattern()
+    {
+        bool hasTarget = attackTarget != null;
+        float targetDistance = 0f;
+
+        if (hasTarget)
+        {
+            Vector3 targetOffset = attackTarget.position - transform.position;
+            targetOffset.y = 0f;
+            targetDistance = targetOffset.magnitude;
+        }
+
+        EnemyAttackData selectedAttack = null;
+        EnemyAttackData repeatFallback = null;
+        float totalSelectionWeight = 0f;
+
+        foreach (EnemyAttackData attackPattern in enemyData.attackPatterns)
+        {
+            if (attackPattern == null || string.IsNullOrEmpty(attackPattern.attackAnim))
+                continue;
+
+            if (hasTarget && !attackPattern.CanUseAtDistance(targetDistance))
+                continue;
+
+            float selectionWeight = Mathf.Max(0f, attackPattern.selectionWeight);
+
+            if (selectionWeight <= 0f)
+                continue;
+
+            if (!IsAttackPatternReady(attackPattern))
+                continue;
+
+            if (attackPattern == lastAttack)
+            {
+                repeatFallback = attackPattern;
+                continue;
+            }
+
+            // 후보 배열 없이 누적 가중치만으로 각 패턴의 설정 비율에 맞춰 하나를 남긴다.
+            totalSelectionWeight += selectionWeight;
+
+            if (Random.value <= selectionWeight / totalSelectionWeight)
+                selectedAttack = attackPattern;
+        }
+
+        // 거리 조건을 만족하는 다른 패턴이 하나도 없을 때만 직전 공격을 다시 허용한다.
+        return selectedAttack != null ? selectedAttack : repeatFallback;
+    }
+
+    private bool IsAttackPatternReady(EnemyAttackData attackPattern)
+    {
+        if (!patternReadyTimes.TryGetValue(attackPattern, out float readyTime))
+            return true;
+
+        if (Time.time < readyTime)
+            return false;
+
+        patternReadyTimes.Remove(attackPattern);
+        return true;
+    }
+
+    private void BeginPatternSelectionCooldown(EnemyAttackData attackPattern)
+    {
+        float cooldown = Mathf.Max(0f, attackPattern.selectionCooldown);
+
+        if (cooldown <= 0f)
+        {
+            patternReadyTimes.Remove(attackPattern);
+            return;
+        }
+
+        patternReadyTimes[attackPattern] = Time.time + cooldown;
+    }
+
     private void UpdateAttack(AnimatorStateInfo info)
     {
-        if (!info.IsName(currentAttack.attackAnim))
+        if (currentAttack == null)
+        {
+            phase = EnemyAttackPhase.None;
+            return;
+        }
+
+        bool isFollowUp = phase == EnemyAttackPhase.FollowUp;
+        string expectedAnimation = isFollowUp
+            ? currentAttack.followUpAnim
+            : currentAttack.attackAnim;
+
+        if (!info.IsName(expectedAnimation))
             return;
 
         float t = info.normalizedTime;
+
+        UpdateAttackSwing(t, isFollowUp);
+        UpdateAttackTracking(t, isFollowUp);
+
+        if (!isFollowUp)
+            QueueAttackMovement(t);
 
         bool canUseParrySupport =
             supportPointManager != null &&
             supportPointManager.HasEnoughSupportPoint(1);
 
-        // 노란색 공격도 지원 포인트가 부족하면 플레이어에게 빨간색 경고로 안내한다.
-        bool showWarning = t >= currentAttack.warningStart && t < currentAttack.warningEnd;
+        bool showWarning;
+        bool shouldHit;
+        bool canReaction;
+
+        if (isFollowUp)
+        {
+            showWarning = IsInAnyWindow(t, currentAttack.followUpWarningWindows);
+            shouldHit = IsInAnyWindow(t, currentAttack.followUpActiveWindows);
+            canReaction = IsInAnyWindow(t, currentAttack.followUpReactionWindows);
+        }
+        else if (currentAttack.useTimingWindows)
+        {
+            showWarning = IsInAnyWindow(t, currentAttack.warningWindows);
+            shouldHit = IsInAnyWindow(t, currentAttack.activeWindows);
+            canReaction = IsInAnyWindow(t, currentAttack.reactionWindows);
+        }
+        else
+        {
+            showWarning = IsInLegacyWindow(
+                t,
+                currentAttack.warningStart,
+                currentAttack.warningEnd);
+
+            shouldHit = IsInLegacyWindow(
+                t,
+                currentAttack.startUpEnd,
+                currentAttack.activeEnd);
+
+            canReaction = IsInLegacyWindow(
+                t,
+                currentAttack.reactionStart,
+                currentAttack.reactionEnd);
+        }
 
         bool showYellow = showWarning &&
             currentAttack.warningType == WarningType.Yellow &&
@@ -204,53 +424,378 @@ public class EnemyController : MonoBehaviour
             (currentAttack.warningType == WarningType.Yellow && !canUseParrySupport)
             );
 
-        bool shouldHit = t >= currentAttack.startUpEnd && t < currentAttack.activeEnd;
-        bool canReaction = t >= currentAttack.reactionStart && t < currentAttack.reactionEnd;
-
         IsInWarningWindow = showWarning;
         IsInActiveWindow = shouldHit;
         IsInReactionWindow = canReaction;
 
         attackHitBox.SetActive(shouldHit);
-        warningSign_Yellow.SetActive(showYellow);
-        warningSign_Red.SetActive(showRed);
+        UpdateWarningSigns(showYellow, showRed);
 
-        if (t >= 1f)
+        bool hasFollowUp = !string.IsNullOrEmpty(currentAttack.followUpAnim);
+        float stageEnd = !isFollowUp && hasFollowUp
+            ? Mathf.Clamp01(currentAttack.followUpStartNormalized)
+            : 1f;
+
+        if (t < stageEnd)
+            return;
+
+        if (!isFollowUp && hasFollowUp)
         {
-            // 별도 종료 클립이 없는 패턴은 즉시 대기 상태로 돌려보낼 수 있게 공격 상태만 정리한다.
-            if (string.IsNullOrEmpty(currentAttack.endAnim))
-            {
-                IsInWarningWindow = false;
-                IsInActiveWindow = false;
-                IsInReactionWindow = false;
-                attackHitBox.SetActive(false);  
-                currentAttack = null;
-
-                phase = EnemyAttackPhase.None;
-                return;
-            }
-
-            IsInWarningWindow = false;
-            IsInActiveWindow = false;
-            IsInReactionWindow = false;
-            animator.CrossFade(currentAttack.endAnim, 0.05f);
-            attackHitBox.SetActive(false);
-            currentAttack = null;
-            phase = EnemyAttackPhase.None;
+            BeginFollowUp();
+            return;
         }
+
+        FinishAttack();
+    }
+
+    private void UpdateAttackSwing(float normalizedTime, bool isFollowUp)
+    {
+        if (attackSwingPlayed || currentAttack == null)
+            return;
+
+        float activeStart = ResolveAttackActiveStart(isFollowUp);
+        if (normalizedTime < Mathf.Max(0f, activeStart - 0.10f))
+            return;
+
+        attackSwingPlayed = true;
+        CombatAudio.PlayEnemyAttackSwing();
+    }
+
+    private float ResolveAttackActiveStart(bool isFollowUp)
+    {
+        EnemyAttackWindow[] windows = isFollowUp
+            ? currentAttack.followUpActiveWindows
+            : currentAttack.useTimingWindows
+                ? currentAttack.activeWindows
+                : null;
+
+        if (windows != null && windows.Length > 0)
+        {
+            float earliest = float.PositiveInfinity;
+            foreach (EnemyAttackWindow window in windows)
+                earliest = Mathf.Min(earliest, Mathf.Min(window.start, window.end));
+
+            if (!float.IsPositiveInfinity(earliest))
+                return earliest;
+        }
+
+        return isFollowUp ? 0.30f : currentAttack.startUpEnd;
+    }
+
+    private static bool IsInLegacyWindow(float normalizedTime, float start, float end)
+    {
+        float minimum = Mathf.Min(start, end);
+        float maximum = Mathf.Max(start, end);
+        return normalizedTime >= minimum && normalizedTime < maximum;
+    }
+
+    private static bool IsInAnyWindow(
+        float normalizedTime,
+        EnemyAttackWindow[] windows)
+    {
+        if (windows == null)
+            return false;
+
+        foreach (EnemyAttackWindow window in windows)
+        {
+            if (IsInLegacyWindow(normalizedTime, window.start, window.end))
+                return true;
+        }
+
+        return false;
+    }
+
+    private void InitializeWarningSigns()
+    {
+        if (warningSign_Yellow != null)
+        {
+            warningYellowBaseScale = warningSign_Yellow.transform.localScale;
+            warningSign_Yellow.SetActive(false);
+        }
+
+        if (warningSign_Red != null)
+        {
+            warningRedBaseScale = warningSign_Red.transform.localScale;
+            warningSign_Red.SetActive(false);
+        }
+    }
+
+    private void UpdateWarningSigns(bool showYellow, bool showRed)
+    {
+        SetWarningSignVisible(
+            warningSign_Yellow,
+            warningYellowBaseScale,
+            showYellow,
+            ref warningYellowVisible,
+            ref warningYellowTween);
+
+        SetWarningSignVisible(
+            warningSign_Red,
+            warningRedBaseScale,
+            showRed,
+            ref warningRedVisible,
+            ref warningRedTween);
+    }
+
+    private static void SetWarningSignVisible(
+        GameObject sign,
+        Vector3 baseScale,
+        bool visible,
+        ref bool currentState,
+        ref Tween tween)
+    {
+        if (sign == null || currentState == visible)
+            return;
+
+        currentState = visible;
+        tween?.Kill(false);
+        tween = null;
+
+        if (!visible)
+        {
+            sign.transform.localScale = baseScale;
+            sign.SetActive(false);
+            return;
+        }
+
+        sign.SetActive(true);
+        sign.transform.localScale = baseScale * 0.35f;
+
+        tween = DOTween.Sequence()
+            .Append(sign.transform
+                .DOScale(baseScale, 0.09f)
+                .SetEase(Ease.OutBack))
+            .Append(sign.transform
+                .DOPunchScale(baseScale * 0.12f, 0.14f, 5, 0.55f))
+            .SetUpdate(true);
+
+    }
+
+    private void HideWarningSigns()
+    {
+        UpdateWarningSigns(false, false);
+    }
+
+    private void BeginFollowUp()
+    {
+        IsInWarningWindow = false;
+        IsInActiveWindow = false;
+        IsInReactionWindow = false;
+        attackHitBox.SetActive(false);
+        HideWarningSigns();
+        ClearAttackMovement();
+        ConfigureAttackHitBox(true);
+        attackSwingPlayed = false;
+
+        phase = EnemyAttackPhase.FollowUp;
+        animator.speed = baseAnimatorSpeed * Mathf.Max(
+            0.01f,
+            currentAttack.followUpPlaybackSpeed);
+        animator.CrossFade(currentAttack.followUpAnim, 0.05f);
+    }
+
+    private void FinishAttack()
+    {
+        string endAnimation = currentAttack.endAnim;
+
+        IsInWarningWindow = false;
+        IsInActiveWindow = false;
+        IsInReactionWindow = false;
+        attackHitBox.SetActive(false);
+        HideWarningSigns();
+        ClearAttackMovement();
+        RestoreAnimatorSpeed();
+        attackSwingPlayed = false;
+
+        currentAttack = null;
+        phase = EnemyAttackPhase.None;
+
+        if (!string.IsNullOrEmpty(endAnimation))
+            animator.CrossFade(endAnimation, 0.05f);
+    }
+
+    private void UpdateAttackTracking(float normalizedTime, bool isFollowUp)
+    {
+        attackTrackingActive = false;
+
+        if (currentAttack == null || attackTarget == null || !currentAttack.useTargetTracking)
+            return;
+
+        EnemyAttackWindow[] trackingWindows = isFollowUp
+            ? currentAttack.followUpTargetTrackingWindows
+            : currentAttack.targetTrackingWindows;
+
+        if (!IsInAnyWindow(normalizedTime, trackingWindows))
+            return;
+
+        Vector3 direction = attackTarget.position - transform.position;
+        direction.y = 0f;
+
+        if (direction.sqrMagnitude < 0.0001f)
+            return;
+
+        attackTrackingDirection = direction.normalized;
+        attackTrackingRotationSpeed = Mathf.Max(
+            0f,
+            currentAttack.targetTrackingRotationSpeed);
+        attackTrackingActive = true;
+
+        if (currentAttack.steerMovementWhileTracking)
+            attackMoveDirection = attackTrackingDirection;
+    }
+    private void ConfigureAttackHitBox(bool useFollowUpShape)
+    {
+        if (attackBoxCollider == null || currentAttack == null)
+            return;
+
+        bool hasFollowUpShape =
+            useFollowUpShape && currentAttack.useFollowUpHitBoxShape;
+        bool hasMainShape = currentAttack.useCustomHitBoxShape;
+
+        Vector3 center;
+        Vector3 size;
+
+        if (hasFollowUpShape)
+        {
+            center = currentAttack.followUpHitBoxCenter;
+            size = currentAttack.followUpHitBoxSize;
+        }
+        else if (hasMainShape)
+        {
+            center = currentAttack.hitBoxCenter;
+            size = currentAttack.hitBoxSize;
+        }
+        else
+        {
+            center = defaultAttackHitBoxCenter;
+            size = defaultAttackHitBoxSize;
+        }
+
+        attackBoxCollider.center = center;
+        attackBoxCollider.size = new Vector3(
+            Mathf.Max(0.01f, Mathf.Abs(size.x)),
+            Mathf.Max(0.01f, Mathf.Abs(size.y)),
+            Mathf.Max(0.01f, Mathf.Abs(size.z)));
+    }
+    private void RestoreAnimatorSpeed()
+    {
+        if (animator != null)
+            animator.speed = baseAnimatorSpeed;
+    }
+
+    private void BeginAttackMovement()
+    {
+        previousAttackMovementTime = 0f;
+        pendingAttackMoveDistance = 0f;
+
+        // 공격 도중 플레이어를 계속 추적하지 않도록 시작 순간의 정면을 고정한다.
+        attackMoveDirection = transform.forward;
+        attackMoveDirection.y = 0f;
+
+        if (attackMoveDirection.sqrMagnitude > 0.0001f)
+            attackMoveDirection.Normalize();
+    }
+
+    private void QueueAttackMovement(float normalizedTime)
+    {
+        if (currentAttack == null || !currentAttack.useForwardMovement)
+            return;
+
+        float currentTime = Mathf.Clamp01(normalizedTime);
+
+        if (currentAttack.useDistanceBasedMovement)
+        {
+            float previousProgress = EvaluateMovementProgress(
+                previousAttackMovementTime,
+                currentAttack.moveStart,
+                currentAttack.moveEnd);
+
+            float currentProgress = EvaluateMovementProgress(
+                currentTime,
+                currentAttack.moveStart,
+                currentAttack.moveEnd);
+
+            float progressDelta = Mathf.Max(0f, currentProgress - previousProgress);
+
+            pendingAttackMoveDistance +=
+                currentAttack.forwardMoveDistance * progressDelta;
+        }
+        else if (currentTime >= currentAttack.moveStart &&
+                 currentTime <= currentAttack.moveEnd)
+        {
+            pendingAttackMoveDistance +=
+                currentAttack.forwardMoveSpeed * Time.deltaTime;
+        }
+
+        previousAttackMovementTime =
+            Mathf.Max(previousAttackMovementTime, currentTime);
+    }
+
+    private static float EvaluateMovementProgress(
+        float normalizedTime,
+        float start,
+        float end)
+    {
+        if (end <= start)
+            return normalizedTime >= end ? 1f : 0f;
+
+        return Mathf.InverseLerp(start, end, normalizedTime);
+    }
+
+    private void FixedUpdate()
+    {
+        if (enemyRigidbody == null)
+            return;
+
+        if (attackTrackingActive && attackTrackingDirection.sqrMagnitude > 0.0001f)
+        {
+            Quaternion targetRotation = Quaternion.LookRotation(
+                attackTrackingDirection,
+                Vector3.up);
+            Quaternion nextRotation = Quaternion.RotateTowards(
+                enemyRigidbody.rotation,
+                targetRotation,
+                attackTrackingRotationSpeed * Time.fixedDeltaTime);
+
+            enemyRigidbody.MoveRotation(nextRotation);
+        }
+
+        if (pendingAttackMoveDistance <= 0f)
+            return;
+
+        float moveDistance = pendingAttackMoveDistance;
+        pendingAttackMoveDistance = 0f;
+
+        Vector3 nextPosition =
+            enemyRigidbody.position + attackMoveDirection * moveDistance;
+
+        enemyRigidbody.MovePosition(nextPosition);
+    }
+
+    private void ClearAttackMovement()
+    {
+        previousAttackMovementTime = 0f;
+        pendingAttackMoveDistance = 0f;
+        attackMoveDirection = Vector3.zero;
+        attackTrackingActive = false;
+        attackTrackingDirection = Vector3.zero;
+        attackTrackingRotationSpeed = 0f;
     }
 
     public void InterruptAttack()
     {
         if (attackHitBox != null)
             attackHitBox.SetActive(false);
-        if (warningSign_Yellow != null)
-            warningSign_Yellow.SetActive(false);
-        if (warningSign_Red != null)
-            warningSign_Red.SetActive(false);
+
+        HideWarningSigns();
+
         IsInWarningWindow = false;
         IsInActiveWindow = false;
         IsInReactionWindow = false;
+
+        RestoreAnimatorSpeed();
+        ClearAttackMovement();
+        attackSwingPlayed = false;
 
         if (animator != null && currentAttack != null && !string.IsNullOrEmpty(currentAttack.endAnim))
             animator.CrossFade(currentAttack.endAnim, 0.05f);
@@ -259,6 +804,59 @@ public class EnemyController : MonoBehaviour
         phase = EnemyAttackPhase.None;
     }
 
+    public void ApplyParryReaction()
+    {
+        // 공격 판정, 경고 표시, 추적 이동을 먼저 모두 끊은 뒤 패링 전용 경직을 시작한다.
+        InterruptAttack();
+
+        if (isGroggy || enemyData == null)
+            return;
+
+        isInHitReaction = true;
+        hitReactionTimeRemaining = Mathf.Max(
+            0.01f,
+            enemyData.parryReactionDuration);
+
+        if (animator != null && !string.IsNullOrEmpty(enemyData.parryReactionAnim))
+        {
+            animator.CrossFade(
+                enemyData.parryReactionAnim,
+                Mathf.Clamp(enemyData.parryReactionBlendDuration, 0f, 0.25f));
+        }
+    }
+    private void BeginHitReaction()
+    {
+        if (isGroggy || enemyData.hitReactionDuration <= 0f)
+            return;
+
+        currentHitReactionGauge = Mathf.Clamp(
+            enemyData.hitReactionResetValue,
+            0f,
+            enemyData.maxHitReactionGauge);
+        isInHitReaction = true;
+        hitReactionTimeRemaining = enemyData.hitReactionDuration;
+        InterruptAttack();
+
+        if (animator != null && !string.IsNullOrEmpty(enemyData.hitReactionAnim))
+            animator.CrossFade(enemyData.hitReactionAnim, 0.04f);
+
+        CombatPresentationEffects.Flash(Color.white, 0.025f, 0.14f);
+    }
+
+    private void UpdateHitReaction()
+    {
+        hitReactionTimeRemaining = Mathf.Max(
+            0f,
+            hitReactionTimeRemaining - Time.deltaTime);
+
+        if (hitReactionTimeRemaining > 0f)
+            return;
+
+        isInHitReaction = false;
+
+        if (animator != null && !string.IsNullOrEmpty(enemyData.hitReactionEndAnim))
+            animator.CrossFade(enemyData.hitReactionEndAnim, 0.08f);
+    }
     public void ReceiveHit(CombatHitData hitData)
     {
         if (hitData.attacker == null) return;
@@ -277,6 +875,16 @@ public class EnemyController : MonoBehaviour
 
         currentHp = Mathf.Clamp(currentHp - finalDamage, 0f, enemyData.maxHp);
 
+        bool emphasizeDamage =
+            hitData.canTriggerChainSkill ||
+            hitData.damageMultiplier >= 1.5f ||
+            hitData.impactMultiplier >= 1.25f;
+        CombatDamageNumberUI.Play(
+            transform.position + Vector3.up * 1.65f,
+            finalDamage,
+            hitData.resolvedElement,
+            emphasizeDamage);
+
         float stunDamage = 0f;
         if (!isGroggy)
         {
@@ -288,10 +896,6 @@ public class EnemyController : MonoBehaviour
 
         // 일반 공격은 0을 전달하므로 강공격에 설정된 누적치만 게이지에 반영된다.
         AddHitReactionBuildUp(hitData.hitReactionBuildUp);
-
-        Debug.Log($"{name} 피해 {finalDamage:F1} / 현재 체력 {currentHp:F1}");
-        Debug.Log($"{name} 그로기 누적 {stunDamage:F1} / 현재 그로기 수치 {currentStun:F1}");
-        Debug.Log($"{name} 속성 = {hitData.resolvedElement}, 이상 누적치 = {hitData.anomalyBuildUp}");
 
         if (!isGroggy && enemyData.maxStun > 0f && currentStun >= enemyData.maxStun)
             EnterGroggy(hitData.attacker, hitData.canTriggerChainSkill);
@@ -313,8 +917,6 @@ public class EnemyController : MonoBehaviour
                 currentAnomalyGauge = state.gauge;
                 anomalyStates[i] = state;
 
-                Debug.Log($"{name} {state.element} 이상 게이지 = {state.gauge:F1} / {enemyData.anomalyThreshold:F1}");
-
                 TryTriggerAnomaly(state.element, i);
 
                 break;
@@ -334,7 +936,6 @@ public class EnemyController : MonoBehaviour
     }
     private void TriggerAnomaly(CombatElement element)
     {
-        Debug.Log($"{name} 이상 효과 발동: {element}");
     }
 
     private void TryTriggerAnomaly(CombatElement element, int stateIndex)
@@ -358,9 +959,23 @@ public class EnemyController : MonoBehaviour
     private void EnterGroggy(PlayerController attacker, bool requestChainSkill)
     {
         isGroggy = true;
+        isInHitReaction = false;
+        hitReactionTimeRemaining = 0f;
+        currentHitReactionGauge = 0f;
+        groggyLoopStarted = false;
         currentStun = enemyData.maxStun;
         groggyTimeRemaining = Mathf.Max(0.01f, enemyData.groggyDuration);
+
+        CombatPresentationEffects.PlayGroggy(currentAnomalyElement);
+        CombatHitVfx.Play(
+            transform.position + Vector3.up * 1.6f,
+            Vector3.up,
+            currentAnomalyElement,
+            1.6f);
         InterruptAttack();
+
+        if (animator != null && !string.IsNullOrEmpty(enemyData.groggyStartAnim))
+            animator.CrossFade(enemyData.groggyStartAnim, 0.05f);
 
         if (requestChainSkill)
             ChainSkillRequested?.Invoke(this, attacker);
@@ -368,6 +983,18 @@ public class EnemyController : MonoBehaviour
 
     private void UpdateGroggy()
     {
+        if (!groggyLoopStarted && animator != null &&
+            !string.IsNullOrEmpty(enemyData.groggyStartAnim))
+        {
+            AnimatorStateInfo info = animator.GetCurrentAnimatorStateInfo(0);
+            if (info.IsName(enemyData.groggyStartAnim) && info.normalizedTime >= 0.9f)
+            {
+                groggyLoopStarted = true;
+                if (!string.IsNullOrEmpty(enemyData.groggyLoopAnim))
+                    animator.CrossFade(enemyData.groggyLoopAnim, 0.08f);
+            }
+        }
+
         float duration = Mathf.Max(0.01f, enemyData.groggyDuration);
         groggyTimeRemaining = Mathf.Max(0f, groggyTimeRemaining - Time.deltaTime);
         currentStun = enemyData.maxStun * (groggyTimeRemaining / duration);
@@ -377,5 +1004,9 @@ public class EnemyController : MonoBehaviour
 
         currentStun = 0f;
         isGroggy = false;
+        groggyLoopStarted = false;
+
+        if (animator != null && !string.IsNullOrEmpty(enemyData.groggyEndAnim))
+            animator.CrossFade(enemyData.groggyEndAnim, 0.08f);
     }
 }

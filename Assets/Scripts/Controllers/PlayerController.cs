@@ -81,6 +81,9 @@ public class PlayerController : MonoBehaviour
     public UltimateState UltimateState { get; private set; }
     public SupportState ParryState { get; private set; }
 
+    public Vector3 LastHitDirection { get; private set; }
+    public bool LastHitWasHeavy { get; private set; }
+
     [Header("Attack Assist")]
     [SerializeField] private LayerMask attackTargetMask = ~0;
 
@@ -96,13 +99,16 @@ public class PlayerController : MonoBehaviour
         characterData.enhancedSkillBranch != null &&
         currentEnergy >= characterData.enhancedSkillBranch.requiredEntryEnergy;
 
+    [Header("Attack HitBox")]
+    [SerializeField] private HitBox attackHitBox;
+    public HitBox AttackHitBox => attackHitBox;
+
+
     [Header("Ultimate")]
     [SerializeField] private float maxDecibel = 3000f;
     [SerializeField] private float currentDecibel = 0f;
     [SerializeField] private float normalAttackDecibelGain = 80f;
     [SerializeField] private float skillDecibelGain = 120f;
-    [SerializeField] private HitBox ultHitBox;
-    public HitBox UltHitBox => ultHitBox;
 
     public float MaxDecibel => maxDecibel;
     public float CurrentDecibel => currentDecibel;
@@ -110,9 +116,6 @@ public class PlayerController : MonoBehaviour
 
     public TMP_Text decibelText_temp;
 
-    [Header("SkillHitBox")]
-    [SerializeField] private HitBox[] skillHitBoxSlots;
-    public int SkillHitBoxSlotCount => skillHitBoxSlots != null ? skillHitBoxSlots.Length : 0;
 
     [Header("SupportPoint")]
     [SerializeField] private SupportPointManager supportPointManager;
@@ -153,7 +156,9 @@ public class PlayerController : MonoBehaviour
     {
         if (!isInitialized) return;
 
-        ChangeState(LocomotionState);
+        // 처음 활성화된 대기 캐릭터가 교체 직후 지정받은 패링/회피 State를 덮어쓰지 않는다.
+        if (currentState == null)
+            ChangeState(LocomotionState);
     }
 
     private void Update()
@@ -179,8 +184,28 @@ public class PlayerController : MonoBehaviour
 
     public bool TryReceiveHit()
     {
-        if (IsInvincible) return false;
+        return TryReceiveHit(transform.position - transform.forward, false);
+    }
 
+    public bool TryReceiveHit(Vector3 sourcePosition, bool heavyReaction)
+    {
+        if (IsInvincible)
+            return false;
+
+        Vector3 awayFromSource = transform.position - sourcePosition;
+        awayFromSource.y = 0f;
+
+        if (awayFromSource.sqrMagnitude > 0.0001f)
+        {
+            LastHitDirection = awayFromSource.normalized;
+            transform.rotation = Quaternion.LookRotation(-LastHitDirection, Vector3.up);
+        }
+        else
+        {
+            LastHitDirection = -transform.forward;
+        }
+
+        LastHitWasHeavy = heavyReaction;
         ChangeState(HitState);
         return true;
     }
@@ -272,10 +297,12 @@ public class PlayerController : MonoBehaviour
             QueryTriggerInteraction.Collide);
 
         Transform selfRoot = transform.root;
-        Transform bestTarget = null;
-        float bestScore = float.MaxValue;
+        Transform bestPreferredTarget = null;
+        float bestPreferredScore = float.MaxValue;
+        Transform bestFallbackTarget = null;
+        float bestFallbackScore = float.MaxValue;
 
-        // 카메라 정면을 우선하되 캐릭터 방향과 거리도 합산해 조작자가 의도한 적을 고른다.
+        // 카메라 정면의 적을 우선하되 정면 후보가 없으면 반경 안의 적을 후순위로 고른다.
         foreach (Collider hit in hits)
         {
             HurtBox hurtBox = hit.GetComponent<HurtBox>();
@@ -301,26 +328,35 @@ public class PlayerController : MonoBehaviour
 
             float distance = Mathf.Sqrt(sqrDistance);
             Vector3 direction = toTarget / distance;
-
             float cameraAngle = Vector3.Angle(referenceForward, direction);
+            float playerAngle = Vector3.Angle(playerForward, direction);
+            float fallbackScore = (playerAngle * 0.35f) + (distance * 6f);
 
+            if (Vector3.Dot(playerForward, direction) < 0f)
+                fallbackScore += 15f;
+
+            if (fallbackScore < bestFallbackScore)
+            {
+                bestFallbackScore = fallbackScore;
+                bestFallbackTarget = targetRoot;
+            }
+
+            // maxAngle은 대상을 버리는 조건이 아니라 카메라 정면 우선권의 범위다.
             if (cameraAngle > maxAngle)
                 continue;
 
-            float playerAngle = Vector3.Angle(playerForward, direction);
-            float score = cameraAngle + (playerAngle * 0.35f) + (distance * 6f);
+            float preferredScore = cameraAngle + fallbackScore;
 
-            if (Vector3.Dot(playerForward, direction) < 0f)
-                score += 15f;
-
-            if (score >= bestScore)
+            if (preferredScore >= bestPreferredScore)
                 continue;
 
-            bestScore = score;
-            bestTarget = targetRoot;
+            bestPreferredScore = preferredScore;
+            bestPreferredTarget = targetRoot;
         }
 
-        return bestTarget;
+        return bestPreferredTarget != null
+            ? bestPreferredTarget
+            : bestFallbackTarget;
     }
 
     public Vector3 GetAttackAssistDirection(Transform target)
@@ -367,14 +403,6 @@ public class PlayerController : MonoBehaviour
         EnergyChanged?.Invoke(this);
     }
 
-    public HitBox GetSkillHitBox(int slotIndex)
-    {
-        if (skillHitBoxSlots == null) return null;
-
-        if (slotIndex < 0 || slotIndex >= skillHitBoxSlots.Length) return null;
-
-        return skillHitBoxSlots[slotIndex];
-    }
     public void SetCurrentSpeed(float speed)
     {
         CurrentSpeed = speed;
@@ -421,7 +449,6 @@ public class PlayerController : MonoBehaviour
     public void OnMove(InputValue value)
     {
         MoveInput = value.Get<Vector2>();
-        Debug.Log($"{name} 이동 입력 = {MoveInput}");
     }
 
     public void OnAttack(InputValue value)
@@ -440,13 +467,10 @@ public class PlayerController : MonoBehaviour
         {
             DodgeState.SetDodgeType(DodgeType.Perfect);
             currentState?.HandleDodge();
-
-            Debug.Log("극한 회피!!!");
             return;
         }
 
         DodgeState.SetDodgeType(DodgeType.Normal);
-        Debug.Log("회피!");
         currentState?.HandleDodge();
     }
     public void OnHitTest(InputValue value)

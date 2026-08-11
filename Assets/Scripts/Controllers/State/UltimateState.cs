@@ -1,4 +1,4 @@
-﻿using UnityEngine;
+using UnityEngine;
 
 public class UltimateState : IPlayerState
 {
@@ -10,6 +10,7 @@ public class UltimateState : IPlayerState
     }
 
     private UltimateData ultData;
+    private HitBox hitBox;
 
     private readonly PlayerController player;
 
@@ -17,6 +18,7 @@ public class UltimateState : IPlayerState
 
     private Transform assistTarget;
     private Vector3 ultAssistDirection;
+    private float previousMovementTime;
 
     private UltimatePhase phase;
 
@@ -37,6 +39,14 @@ public class UltimateState : IPlayerState
         if (ultData == null)
         {
             ultData = player.CharacterData.ultimateData;
+        }
+
+        hitBox = player.AttackHitBox;
+        if (hitBox == null)
+        {
+            Debug.LogError("궁극기 상태: 공용 공격 히트박스가 없습니다.", player);
+            player.ChangeState(player.LocomotionState);
+            return;
         }
 
         if (!player.TryUseDecibel(ultData.decibelCost))
@@ -63,18 +73,21 @@ public class UltimateState : IPlayerState
 
         };
 
-        if (player.UltHitBox != null)
-        {
-            player.UltHitBox.SetHitData(hitData);
-        }
+        hitBox.SetRewardType(DecibelRewardType.None);
+        hitBox.SetHitData(hitData);
+        hitBox.SetFeedback(ultData.hitFeedback);
+        hitBox.ConfigureShape(ultData.hitBoxShape);
+        hitBox.SetActive(false);
 
         assistTarget = player.FindAttackTarget(ultData.autoAimRadius, ultData.autoAimMaxAngle);
         ultAssistDirection = player.GetAttackAssistDirection(assistTarget);
 
+        CombatPresentationEffects.BeginUltimate(resolvedElement);
         player.SetInvincible(true);
+        previousMovementTime = 0f;
+        currentHitWindowIndex = -1;
         phase = UltimatePhase.Start;
         player.Animator.CrossFade(ultData.ultStartAnim, 0.05f);
-        Debug.Log("궁극기 상태 진입");
     }
 
     public void Update()
@@ -107,28 +120,78 @@ public class UltimateState : IPlayerState
             player.RotateToward(ultAssistDirection, ultData.autoAimRotationMultiplier);
 
         // 컷신 뒤에 순간 접근하지 않도록 시작 단계에서 대상 방향 접근을 끝낸다.
-        if (t >= ultData.moveStart && t < ultData.moveEnd)
+        float currentTime = Mathf.Clamp01(t);
+        if (ultData.useDistanceBasedMovement)
         {
             if (ultAssistDirection.sqrMagnitude > 0.0001f && assistTarget != null)
                 moveDirection = ultAssistDirection;
             else
                 moveDirection = player.transform.forward;
 
-            Vector3 forwardMove = moveDirection * ultData.forwardMoveSpeed;
-            player.Controller.Move(forwardMove * Time.deltaTime);
+            float previousProgress = EvaluateMovementProgress(
+                previousMovementTime,
+                ultData.moveStart,
+                ultData.moveEnd);
+            float currentProgress = EvaluateMovementProgress(
+                currentTime,
+                ultData.moveStart,
+                ultData.moveEnd);
+            float progressDelta = Mathf.Max(0f, currentProgress - previousProgress);
+
+            if (progressDelta > 0f)
+            {
+                float moveDistance = ClampMoveDistanceToTarget(
+                    ultData.forwardMoveDistance * progressDelta,
+                    moveDirection);
+                player.Controller.Move(moveDirection * moveDistance);
+            }
         }
+        else if (currentTime >= ultData.moveStart && currentTime < ultData.moveEnd)
+        {
+            if (ultAssistDirection.sqrMagnitude > 0.0001f && assistTarget != null)
+                moveDirection = ultAssistDirection;
+            else
+                moveDirection = player.transform.forward;
+
+            float moveDistance = ClampMoveDistanceToTarget(
+                ultData.forwardMoveSpeed * Time.deltaTime,
+                moveDirection);
+            player.Controller.Move(moveDirection * moveDistance);
+        }
+
+        previousMovementTime = Mathf.Max(previousMovementTime, currentTime);
         // TODO: 컷신이 연결되면 시작 구간의 접근 이동과 함께 끝나도록 동기화한다.
 
         if (t >= 1f)
         {
-            if (player.UltHitBox != null)
-                player.UltHitBox.SetActive(false);
+            hitBox.SetActive(false);
 
             phase = UltimatePhase.Hit;
             player.Animator.CrossFade(ultData.ultHitAnim, 0.05f);
         }
     }
 
+    private static float EvaluateMovementProgress(float normalizedTime, float start, float end)
+    {
+        if (end <= start)
+            return normalizedTime >= end ? 1f : 0f;
+
+        return Mathf.InverseLerp(start, end, normalizedTime);
+    }
+
+    private float ClampMoveDistanceToTarget(float requestedDistance, Vector3 moveDirection)
+    {
+        if (requestedDistance <= 0f || assistTarget == null)
+            return Mathf.Max(0f, requestedDistance);
+
+        Vector3 toTarget = assistTarget.position - player.transform.position;
+        toTarget.y = 0f;
+
+        float distanceAlongMove = Vector3.Dot(toTarget, moveDirection);
+        float remainingDistance = distanceAlongMove - ultData.autoAimStopDistance;
+
+        return Mathf.Clamp(requestedDistance, 0f, Mathf.Max(0f, remainingDistance));
+    }
     private void UpdateHitPhase(AnimatorStateInfo info)
     {
         if (!info.IsName(ultData.ultHitAnim))
@@ -153,16 +216,18 @@ public class UltimateState : IPlayerState
         if (detectedWindowIndex != currentHitWindowIndex)
         {
             currentHitWindowIndex = detectedWindowIndex;
+
+            if (currentHitWindowIndex >= 0)
+                CombatAudio.PlayAttackSwing(1.35f);
+
             // 이후 한 대상당 한 번만 맞히는 목록을 추가하면 새 윈도우 진입 시 여기서 초기화한다.
         }
 
-        if (player.UltHitBox != null)
-            player.UltHitBox.SetActive(shouldHit);
+        hitBox.SetActive(shouldHit);
 
         if (t >= 1f)
         {
-            if (player.UltHitBox != null)
-                player.UltHitBox.SetActive(false);
+            hitBox.SetActive(false);
 
             currentHitWindowIndex = -1;
             phase = UltimatePhase.End;
@@ -184,13 +249,10 @@ public class UltimateState : IPlayerState
     public void Exit()
     {
         // 어떤 경로로 상태를 빠져나가도 무적과 타격 판정이 남지 않게 정리한다.
+        CombatPresentationEffects.EndUltimate();
         player.SetInvincible(false);
 
-        if (player.UltHitBox == null)
-            return;
-        
-        player.UltHitBox.SetActive(false);
-        Debug.Log("궁극기 상태 종료");
+        hitBox?.SetActive(false);
     }
 
     #region Handle

@@ -1,4 +1,4 @@
-﻿using UnityEngine;
+using UnityEngine;
 
 public class LocomotionState : IPlayerState
 {
@@ -39,7 +39,6 @@ public class LocomotionState : IPlayerState
 
     public void Update()
     {
-        Debug.Log($"현재 속도 = {player.CurrentSpeed}");
 
         // 임시로 이동 상태에서만 에너지가 자동 회복된다.
         player.RecoveryEnergyOverTime(player.EnergyRecoveryRate);

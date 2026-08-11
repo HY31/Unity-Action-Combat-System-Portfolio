@@ -1,4 +1,4 @@
-﻿using UnityEngine;
+using UnityEngine;
 
 [CreateAssetMenu(menuName = "Combat(Enemy)/Enemy Data")]
 public class EnemyData : ScriptableObject
@@ -26,6 +26,16 @@ public class EnemyData : ScriptableObject
     [Min(0f)] public float hitReactionResetValue = 50f;
     [Min(0f)] public float hitReactionDecayPerSecond = 45f;
     [Min(0f)] public float hitReactionDuration = 0.45f;
+
+    [Header("Presentation Animation")]
+    public string hitReactionAnim;
+    public string hitReactionEndAnim;
+    public string parryReactionAnim;
+    [Min(0.01f)] public float parryReactionDuration = 1.45f;
+    [Range(0f, 0.25f)] public float parryReactionBlendDuration = 0.025f;
+    public string groggyStartAnim;
+    public string groggyLoopAnim;
+    public string groggyEndAnim;
 
     [Header("Anomaly")]
     public float anomalyThreshold = 100f;

@@ -35,6 +35,12 @@ public class CharacterBuildPipeline : MonoBehaviour
                 AddError($"{label} 값이 없습니다.");
         }
 
+        void ValidateHitBoxShape(HitBoxShape shape, string label)
+        {
+            if (!shape.HasValidSize)
+                AddError($"{label}.hitBoxShape 크기는 모든 축이 0보다 커야 합니다.");
+        }
+
         void ValidateAttackData(AttackData attack, string label)
         {
             if (attack == null)
@@ -45,6 +51,7 @@ public class CharacterBuildPipeline : MonoBehaviour
 
             AddErrorIfEmpty(attack.attackAnim, $"{label}.attackAnim");
             AddErrorIfEmpty(attack.endAnim, $"{label}.endAnim");
+            ValidateHitBoxShape(attack.hitBoxShape, label);
         }
 
         void ValidateSkillData(SkillData skill, string label)
@@ -58,8 +65,7 @@ public class CharacterBuildPipeline : MonoBehaviour
             AddErrorIfEmpty(skill.skillAnim, $"{label}.skillAnim");
             AddErrorIfEmpty(skill.endAnim, $"{label}.endAnim");
 
-            if (skill.hitBoxSlotIndex < 0)
-                AddError($"{label}.hitBoxSlotIndex 값이 올바르지 않습니다.");
+            ValidateHitBoxShape(skill.hitBoxShape, label);
         }
 
         void ValidateUltimateData(UltimateData ult, string label)
@@ -73,6 +79,7 @@ public class CharacterBuildPipeline : MonoBehaviour
             AddErrorIfEmpty(ult.ultStartAnim, $"{label}.ultStartAnim");
             AddErrorIfEmpty(ult.ultHitAnim, $"{label}.ultHitAnim");
             AddErrorIfEmpty(ult.ultEndAnim, $"{label}.ultEndAnim");
+            ValidateHitBoxShape(ult.hitBoxShape, label);
         }
 
         if (preset.basePrefab == null)
@@ -109,14 +116,8 @@ public class CharacterBuildPipeline : MonoBehaviour
         if (player.CameraFollowTarget == null)
             AddError("PlayerController에 CameraFollowTarget이 없습니다.");
 
-        if (player.UltHitBox == null)
-            AddError("PlayerController에 UltHitBox가 없습니다.");
-
-        for (int i = 0; i < player.SkillHitBoxSlotCount; i++)
-        {
-            if (player.GetSkillHitBox(i) == null)
-                AddError($"스킬 히트박스 슬롯 {i}이(가) 없습니다.");
-        }
+        if (player.AttackHitBox == null)
+            AddError("PlayerController에 공용 AttackHitBox가 없습니다.");
 
         CharacterData data = preset.characterData;
 
@@ -534,13 +535,6 @@ public class CharacterBuildPipeline : MonoBehaviour
             Debug.Log($"일반 스킬 = {data.normalSkillBranch.skillAnim} / {data.normalSkillBranch.endAnim}");
         }
 
-        if (data.normalSkillBranch != null)
-        {
-            data.normalSkillBranch.hitBoxSlotIndex = 1;
-            EditorUtility.SetDirty(data.normalSkillBranch);
-
-            Debug.Log($"일반 스킬 히트박스 슬롯 = {data.normalSkillBranch.hitBoxSlotIndex}");
-        }
 
         // 강화 스킬 자동 배정
         if (data.enhancedSkillBranch != null)
@@ -560,13 +554,6 @@ public class CharacterBuildPipeline : MonoBehaviour
             Debug.Log($"강화 스킬 = {data.enhancedSkillBranch.skillAnim} / {data.enhancedSkillBranch.endAnim}");
         }
 
-        if (data.enhancedSkillBranch != null)
-        {
-            data.enhancedSkillBranch.hitBoxSlotIndex = 2;
-            EditorUtility.SetDirty(data.enhancedSkillBranch);
-
-            Debug.Log($"강화 스킬 히트박스 슬롯 = {data.enhancedSkillBranch.hitBoxSlotIndex}");
-        }
 
         // 궁극기 자동 배정
         if (data.ultimateData != null)

@@ -1,4 +1,4 @@
-﻿using UnityEngine;
+using UnityEngine;
 
 [CreateAssetMenu(menuName = "Combat/Skill Data")]
 public class SkillData : ScriptableObject
@@ -18,20 +18,36 @@ public class SkillData : ScriptableObject
     [Header("Hit")]
     public HitPayload hitPayload;
 
+    [Header("HitBox Shape")]
+    public HitBoxShape hitBoxShape = HitBoxShape.Default;
+
     [Header("Timing")]
     [Range(0f, 1f)] public float moveStart = 0.2f;
     [Range(0f, 1f)] public float moveEnd = 0.5f;
     [Range(0f, 1f)] public float hitStart = 0.3f;
     [Range(0f, 1f)] public float hitEnd = 0.6f;
+
     [Range(0f, 1f)] public float chainInputOpenTime = 0.55f;
     [Range(0f, 1f)] public float endTransitionTime = 0.8f;
     [Range(0f, 1f)] public float locomotionRecoverTime = 0.2f;
 
+    [Header("Energy Commit")]
+    [Tooltip("에너지를 사용하는 강화 특수 스킬이 실제로 에너지를 소비하는 시점이다. 에너지 비용이 0인 일반 스킬에서는 사용하지 않는다.")]
+    [Range(0f, 1f)] public float energyCommitTime = 0.15f;
+
+    [Tooltip("에너지 소비 후 주요 대미지와 효과가 끝나 회피가 다시 허용되는 시점이다.")]
+    [Range(0f, 1f)] public float enhancedDodgeUnlockTime = 0.75f;
+
+    [Header("Cancel Timing")]
+    [Tooltip("이 시점부터 평타 입력이 현재 스킬의 후속 동작을 취소할 수 있다.")]
+    [Range(0f, 1f)] public float attackCancelOpenTime = 0.75f;
+
+    [Tooltip("이 시점부터 이동 입력이 현재 스킬의 후속 동작을 취소할 수 있다.")]
+    [Range(0f, 1f)] public float locomotionCancelOpenTime = 0.75f;
+
     [Header("Chain")] // 엘렌은 강화 특수 스킬 이후 추가적으로 에너지를 조금 써서 스킬 : 샤크나미 사용 가능 하기에 콤보 구현
     public SkillData nextSkill;
 
-    [Header("HitBox")]
-    public int hitBoxSlotIndex = -1;
 
     [Header("Movement")]
     public float forwardMoveSpeed = 4f;
@@ -40,9 +56,7 @@ public class SkillData : ScriptableObject
     [Min(0f)] public float forwardMoveDistance = 1f;
 
     [Header("Feedback")]
-    public float hitStopDuration = 0.06f;
-    public float cameraShakeDuration = 0.15f;
-    public float cameraShakeStrength = 0.1f;
+    public HitFeedbackData hitFeedback = HitFeedbackData.Default;
 
     [Header("Auto Aim")]
     public bool useAutoAim = true;

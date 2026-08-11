@@ -1,4 +1,4 @@
-﻿using UnityEngine;
+using UnityEngine;
 
 public class SkillState : IPlayerState
 {
@@ -13,17 +13,25 @@ public class SkillState : IPlayerState
     private SkillData currentSkill;
     private SkillPhase phase;
 
+    // 현재 스킬이 에너지 커밋 지점을 통과했는지 표시한다.
+    private bool energyCommitted;
+
+    // 스킬 도중 입력된 평타를 캔슬 가능 시점까지 잠시 보관한다.
+    private bool bufferedAttackInput;
+    private float bufferedAttackTimer;
+
     private bool bufferedSkillInput;
     private float bufferedSkillTimer;
     private const float BufferDuration = 0.2f;
 
     private bool skillHitboxActive;
-    private HitBox skillHitBox;
+    private HitBox hitBox;
 
     private Transform assistTarget;
     private Vector3 attackAssistDirection;
     private bool hasAttackAssist;
     private float previousMovementTime;
+    private bool skillSwingPlayed;
 
     public SkillState(PlayerController player)
     {
@@ -50,10 +58,14 @@ public class SkillState : IPlayerState
 
     private void ResetRuntimeFlags()
     {
+        bufferedAttackInput = false;
+        bufferedAttackTimer = 0f;
         bufferedSkillInput = false;
+        energyCommitted = false;
         bufferedSkillTimer = 0f;
         skillHitboxActive = false;
         previousMovementTime = 0f;
+        skillSwingPlayed = false;
 
         ClearAttackAssist();
     }
@@ -77,22 +89,22 @@ public class SkillState : IPlayerState
     public void Exit()
     {
         SetHitBoxActive(false);
-        bufferedSkillInput = false;
-        bufferedSkillTimer = 0f;
-        skillHitboxActive = false;
-        previousMovementTime = 0f;
-        ClearAttackAssist();
+        ResetRuntimeFlags();
     }
 
     #region Handle
     public void HandleAttack()
     {
-        // player.ChangeState(player.AttackState);
+        bufferedAttackInput = true;
+        bufferedAttackTimer = BufferDuration;
     }
 
     public void HandleDodge()
     {
-        // player.ChangeState(player.DodgeState);
+        if (!CanCancelToDodge())
+            return;
+
+        player.ChangeState(player.DodgeState);
     }
 
     public void HandleHit()
@@ -122,22 +134,41 @@ public class SkillState : IPlayerState
 
         float t = info.normalizedTime;
 
+        bool canExecuteSkill = TryCommitEnergy(t);
+
+        // 커밋 실패로 LocomotionState로 전환됐다면
+        // 이전 SkillState의 갱신을 즉시 종료한다.
+        if (player.CurrentState != this)
+            return;
+
+        UpdateSkillSwing(t, canExecuteSkill);
         UpdateAttackAssist(t);
 
         // 루트 모션 대신 애니메이션 정규화 시간에 맞춰 결정론적으로 전진시킨다.
         ApplyForwardMovement(t);
 
         // 스킬 데이터의 활성 구간에만 선택된 슬롯의 HitBox를 켠다.
-        bool shouldHitBoxBeActive = t >= currentSkill.hitStart && t < currentSkill.hitEnd;
+        bool shouldHitBoxBeActive =
+            canExecuteSkill &&
+            t >= currentSkill.hitStart &&
+            t < currentSkill.hitEnd;
         SetHitBoxActive(shouldHitBoxBeActive);
 
-        // 입력 버퍼와 체인 허용 시점을 함께 만족할 때만 다음 스킬을 시도한다.
-        if (t >= currentSkill.chainInputOpenTime)
+        // 스킬 연계를 가장 먼저 처리한다.
+        if (t >= currentSkill.chainInputOpenTime &&
+            TryChainSkill())
         {
-            TryChainSkill();
+            return;
         }
 
-        // 공격 모션과 회복 모션을 분리해 모션 종료 전에도 설정된 시점부터 이동으로 복귀시킨다.
+        // 예약된 평타가 있으면 평타로 연결한다.
+        if (TryCancelToAttack(t))
+            return;
+
+        // 평타 예약이 없다면 이동 입력으로 후딜을 취소한다.
+        if (TryCancelToLocomotion(t))
+            return;
+
         if (t >= currentSkill.endTransitionTime)
         {
             SetHitBoxActive(false);
@@ -146,8 +177,31 @@ public class SkillState : IPlayerState
         }
     }
 
+    private void UpdateSkillSwing(float normalizedTime, bool canExecuteSkill)
+    {
+        if (skillSwingPlayed || currentSkill == null || !canExecuteSkill)
+            return;
+
+        float swingTime = Mathf.Max(0f, currentSkill.hitStart - 0.10f);
+        if (normalizedTime < swingTime)
+            return;
+
+        skillSwingPlayed = true;
+        CombatAudio.PlayAttackSwing(currentSkill.hitPayload.impactMultiplier);
+    }
+
     private void UpdateEndPhase(AnimatorStateInfo info)
     {
+        // 본 스킬 연출은 끝났으므로 모든 후속 입력 시점을 통과한 것으로 취급한다.
+        if (TryChainSkill())
+            return;
+
+        if (TryCancelToAttack(1f))
+            return;
+
+        if (TryCancelToLocomotion(1f))
+            return;
+
         if (!info.IsName(currentSkill.endAnim))
             return;
 
@@ -180,24 +234,24 @@ public class SkillState : IPlayerState
             return false;
         }
 
-        skillHitBox = player.GetSkillHitBox(skill.hitBoxSlotIndex);
+        hitBox = player.AttackHitBox;
 
-        if (skillHitBox == null)
+        if (hitBox == null)
         {
             Debug.LogError("스킬 히트박스가 없습니다.");
             return false;
         }
 
-        // HitBox와 비용을 모두 검증한 실제 실행 시점에만 캐릭터 소유 에너지를 소비한다.
-        if (!player.TryUseEnergy(skill.energyCost))
-            return false;
-
         currentSkill = skill;
         phase = SkillPhase.Attack;
         previousMovementTime = 0f;
+        skillSwingPlayed = false;
 
+        // 일반 특수 스킬은 에너지 비용이 없으므로 시작 즉시 실행 확정.
+        // 강화 특수 스킬은 energyCommitTime까지 선딜 상태로 둔다.
+        energyCommitted = currentSkill.energyCost <= 0f;
 
-        skillHitBox.SetRewardType(DecibelRewardType.Skill);
+        hitBox.SetRewardType(DecibelRewardType.Skill);
 
         CombatElement resolvedElement =
             currentSkill.hitPayload.elementOverride == CombatElement.None
@@ -215,12 +269,77 @@ public class SkillState : IPlayerState
             canTriggerChainSkill = currentSkill.hitPayload.canTriggerChainSkill
         };
 
-        skillHitBox.SetHitData(hitData);
+        hitBox.SetHitData(hitData);
+        hitBox.SetFeedback(currentSkill.hitFeedback);
+        hitBox.ConfigureShape(currentSkill.hitBoxShape);
         SetHitBoxActive(false);
         ResolveAttackAssist();
         player.Animator.CrossFade(currentSkill.skillAnim, 0.05f);
 
         return true;
+    }
+
+    private bool TryCommitEnergy(float normalizedTime)
+    {
+        // 일반 특수 스킬이거나 이미 비용을 지불했다면 실행 가능.
+        if (energyCommitted)
+            return true;
+
+        // 아직 선딜 구간이면 비용을 지불하지 않는다.
+        if (normalizedTime < currentSkill.energyCommitTime)
+            return false;
+
+        // 커밋 순간에 에너지를 다시 확인하고 실제로 소비한다.
+        if (!player.TryUseEnergy(currentSkill.energyCost))
+        {
+            player.ChangeState(player.LocomotionState);
+            return false;
+        }
+
+        // 이후 프레임에서 에너지가 중복 소비되지 않도록 기록한다.
+        energyCommitted = true;
+        return true;
+    }
+
+    private bool CanCancelToDodge()
+    {
+        if (currentSkill == null)
+            return false;
+
+        // 에너지를 사용하지 않는 일반 특수 스킬은 전 구간 회피 가능.
+        if (currentSkill.energyCost <= 0f)
+            return true;
+
+        // 강화 특수 스킬의 종료 모션은 주요 공격 연출이 끝났으므로 회피 가능.
+        if (phase == SkillPhase.End)
+            return true;
+
+        AnimatorStateInfo info =
+            player.Animator.GetCurrentAnimatorStateInfo(0);
+
+        // 스킬 진입 직후 CrossFade 중이고 아직 에너지를 쓰지 않았다면
+        // 선딜 구간으로 취급하여 회피를 허용한다.
+        if (!info.IsName(currentSkill.skillAnim))
+            return !energyCommitted;
+
+        float t = info.normalizedTime;
+
+        // 입력 처리와 Update의 실행 순서가 바뀌어도
+        // 애니메이션 시간이 커밋 지점을 넘었으면 선딜로 취급하지 않는다.
+        bool isBeforeEnergyCommit =
+            !energyCommitted &&
+            t < currentSkill.energyCommitTime;
+
+        if (isBeforeEnergyCommit)
+            return true;
+
+        // 데이터가 잘못 설정되더라도 피해 판정이 끝나기 전에는
+        // 강화 특수 스킬을 회피로 취소하지 못하게 보호한다.
+        float dodgeUnlockTime = Mathf.Max(
+            currentSkill.enhancedDodgeUnlockTime,
+            currentSkill.hitEnd);
+
+        return t >= dodgeUnlockTime;
     }
 
     private bool HasAnimatorState(string stateName)
@@ -237,47 +356,109 @@ public class SkillState : IPlayerState
         return player.Animator.HasState(0, fullPathHash);
     }
 
-    private void TryChainSkill()
+    private bool TryChainSkill()
     {
         if (!bufferedSkillInput)
-            return;
+            return false;
 
         SkillData nextSkill = currentSkill.nextSkill;
 
         if (!CanEnterSkill(nextSkill))
-            return;
+            return false;
 
         bufferedSkillInput = false;
         bufferedSkillTimer = 0f;
 
-        if (!TryStartSkill(nextSkill))
-            return;
+        return TryStartSkill(nextSkill);
     }
 
     private void UpdateInputBuffer()
     {
-        if (!bufferedSkillInput)
-            return;
-
-        bufferedSkillTimer -= Time.deltaTime;
-
-        if (bufferedSkillTimer <= 0f)
+        if (bufferedAttackInput)
         {
-            bufferedSkillInput = false;
-            bufferedSkillTimer = 0f;
+            bufferedAttackTimer -= Time.deltaTime;
+
+            if (bufferedAttackTimer <= 0f)
+            {
+                bufferedAttackInput = false;
+                bufferedAttackTimer = 0f;
+            }
         }
+
+        if (bufferedSkillInput)
+        {
+            bufferedSkillTimer -= Time.deltaTime;
+
+            if (bufferedSkillTimer <= 0f)
+            {
+                bufferedSkillInput = false;
+                bufferedSkillTimer = 0f;
+            }
+        }
+    }
+
+    private float ResolveActionCancelOpenTime(float configuredOpenTime)
+    {
+        // 일반 특수 스킬은 데이터에 설정된 캔슬 시점을 그대로 사용한다.
+        if (currentSkill.energyCost <= 0f)
+            return configuredOpenTime;
+
+        // 강화 특수 스킬은 대미지와 주요 연출이 끝나기 전까지
+        // 평타나 이동으로도 취소할 수 없게 보호한다.
+        float enhancedLockEnd = Mathf.Max(
+            currentSkill.enhancedDodgeUnlockTime,
+            currentSkill.hitEnd);
+
+        return Mathf.Max(configuredOpenTime, enhancedLockEnd);
+    }
+
+    private bool TryCancelToAttack(float normalizedTime)
+    {
+        if (!bufferedAttackInput)
+            return false;
+
+        float cancelOpenTime =
+            ResolveActionCancelOpenTime(currentSkill.attackCancelOpenTime);
+
+        if (normalizedTime < cancelOpenTime)
+            return false;
+
+        bufferedAttackInput = false;
+        bufferedAttackTimer = 0f;
+
+        player.ChangeState(player.AttackState);
+        return true;
+    }
+
+    private bool TryCancelToLocomotion(float normalizedTime)
+    {
+        if (player.MoveInput.sqrMagnitude <= 0.0001f)
+            return false;
+
+        float cancelOpenTime =
+            ResolveActionCancelOpenTime(currentSkill.locomotionCancelOpenTime);
+
+        if (normalizedTime < cancelOpenTime)
+            return false;
+
+        // 평타가 예약돼 있다면 이동보다 평타를 우선한다.
+        if (bufferedAttackInput)
+            return false;
+
+        player.ChangeState(player.LocomotionState);
+        return true;
     }
 
     private void SetHitBoxActive(bool active)
     {
-        if (skillHitBox == null)
+        if (hitBox == null)
             return;
 
         if (skillHitboxActive == active)
             return;
 
         skillHitboxActive = active;
-        skillHitBox.SetActive(active);
+        hitBox.SetActive(active);
     }
 
     private void ResolveAttackAssist()

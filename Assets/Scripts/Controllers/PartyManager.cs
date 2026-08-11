@@ -1,4 +1,4 @@
-﻿using UnityEngine;
+using UnityEngine;
 
 public enum SupportType
 {
@@ -16,6 +16,7 @@ public class PartyManager : MonoBehaviour
     [SerializeField] private ThirdPersonCameraController cameraController;
 
     [SerializeField] private SupportPointManager supportPointManager;
+    [SerializeField, Min(0.5f)] private float parrySpawnDistance = 4.5f;
 
     void Awake()
     {
@@ -94,16 +95,20 @@ public class PartyManager : MonoBehaviour
         return partyMembers[prevIndex];
     }
 
-    public PlayerController SwitchTo(int targetIndex)
+    public PlayerController SwitchTo(
+        int targetIndex,
+        Vector3? switchPosition = null,
+        Quaternion? switchRotation = null)
     {
         if (targetIndex < 0 || targetIndex >= partyMembers.Length || targetIndex == currentIndex) return null;
 
         PlayerController currentPlayer = partyMembers[currentIndex];
         PlayerController switchedPlayer = partyMembers[targetIndex];
 
-        // 비활성 캐릭터를 같은 전투 위치에 배치해 교체가 공간 이동처럼 보이지 않게 한다.
-        switchedPlayer.transform.position = currentPlayer.transform.position;
-        switchedPlayer.transform.rotation = currentPlayer.transform.rotation;
+        // 일반 교체는 현재 위치를 사용하고, 패링 교체는 미리 계산한 보스 정면 위치를 사용한다.
+        switchedPlayer.transform.SetPositionAndRotation(
+            switchPosition ?? currentPlayer.transform.position,
+            switchRotation ?? currentPlayer.transform.rotation);
 
         if (cameraController == null || switchedPlayer.CameraFollowTarget == null)
         {
@@ -134,7 +139,14 @@ public class PartyManager : MonoBehaviour
 
         SupportType currentSupportType = ResolveSupportType(sourcePlayer, enemy);
 
-        PlayerController nextPlayer = SwitchTo(nextIndex);
+        ResolveSwitchPose(
+            sourcePlayer,
+            enemy,
+            currentSupportType,
+            out Vector3 switchPosition,
+            out Quaternion switchRotation);
+
+        PlayerController nextPlayer = SwitchTo(nextIndex, switchPosition, switchRotation);
 
         if (nextPlayer == null) return;
 
@@ -146,7 +158,7 @@ public class PartyManager : MonoBehaviour
             case SupportType.ParrySupport:
                 if (enemy != null && supportPointManager != null && supportPointManager.TryUseSupportPoint(1))
                 {
-                    enemy.InterruptAttack();
+                    nextPlayer.ParryState.SetParryTarget(enemy);
                     nextPlayer.ChangeState(nextPlayer.ParryState);
                 }
                 break;
@@ -169,7 +181,14 @@ public class PartyManager : MonoBehaviour
 
         SupportType currentSupportType = ResolveSupportType(sourcePlayer, enemy);
 
-        PlayerController previousPlayer = SwitchTo(prevIndex);
+        ResolveSwitchPose(
+            sourcePlayer,
+            enemy,
+            currentSupportType,
+            out Vector3 switchPosition,
+            out Quaternion switchRotation);
+
+        PlayerController previousPlayer = SwitchTo(prevIndex, switchPosition, switchRotation);
 
         if (previousPlayer == null) return;
 
@@ -181,14 +200,12 @@ public class PartyManager : MonoBehaviour
             case SupportType.ParrySupport:
                 if (enemy != null && supportPointManager != null && supportPointManager.TryUseSupportPoint(1))
                 {
-                    enemy.InterruptAttack();
-                    Debug.Log("패링!");
+                    previousPlayer.ParryState.SetParryTarget(enemy);
                     previousPlayer.ChangeState(previousPlayer.ParryState);
                 }
                 break;
             case SupportType.PerfectDodgeSupport:
                 previousPlayer.DodgeState.SetDodgeType(DodgeType.Perfect);
-                Debug.Log("극한 회피!");
                 previousPlayer.ChangeState(previousPlayer.DodgeState);
                 break;
         }
@@ -196,33 +213,85 @@ public class PartyManager : MonoBehaviour
 
     public EnemyController FindReactionEnemy(PlayerController sourcePlayer)
     {
-        Transform target = sourcePlayer.FindAttackTarget(10f, 360f);
-        if (target == null) return null;
+        if (sourcePlayer == null)
+            return null;
 
-        EnemyController enemy = target.GetComponent<EnemyController>();
-        if (enemy == null) return null;
+        EnemyController[] enemies = FindObjectsByType<EnemyController>(
+            FindObjectsInactive.Exclude,
+            FindObjectsSortMode.None);
 
-        if (!enemy.IsInReactionWindow) return null;
+        EnemyController nearestWarningEnemy = null;
+        float nearestSqrDistance = float.MaxValue;
 
-        return enemy;
+        // 일반 공격용 10m 자동 조준 검색과 분리한다.
+        // 화면에 워닝 사인이 실제로 떠 있는 적이라면 거리와 카메라 방향에 관계없이 지원 대상이다.
+        foreach (EnemyController enemy in enemies)
+        {
+            if (enemy == null || !enemy.IsAnyWarningVisible)
+                continue;
+
+            float sqrDistance = (enemy.transform.position - sourcePlayer.transform.position).sqrMagnitude;
+            if (sqrDistance >= nearestSqrDistance)
+                continue;
+
+            nearestSqrDistance = sqrDistance;
+            nearestWarningEnemy = enemy;
+        }
+
+        return nearestWarningEnemy;
     }
 
     public SupportType ResolveSupportType(PlayerController sourcePlayer, EnemyController enemy)
     {
         if(enemy == null) return SupportType.Normal;
 
-        // 노란색 공격은 포인트가 있을 때만 패링하며, 부족하면 빨간색 공격과 같은 극한 회피 지원이 된다.
-        if(enemy.CurrentWarningType == WarningType.Yellow
+        WarningType visibleWarningType = enemy.VisibleWarningType;
+
+        // 실제로 보이는 워닝 색을 기준으로 지원 타입을 결정한다.
+        if(visibleWarningType == WarningType.Yellow
             && supportPointManager != null
             && supportPointManager.HasEnoughSupportPoint(1))
             return SupportType.ParrySupport;
 
-        if (enemy.CurrentWarningType == WarningType.Red
-            || enemy.CurrentWarningType == WarningType.Yellow
+        if (visibleWarningType == WarningType.Red
+            || visibleWarningType == WarningType.Yellow
             && supportPointManager != null
             && !supportPointManager.HasEnoughSupportPoint(1))
             return SupportType.PerfectDodgeSupport;
 
         return SupportType.Normal;
+    }
+
+    private void ResolveSwitchPose(
+        PlayerController sourcePlayer,
+        EnemyController enemy,
+        SupportType supportType,
+        out Vector3 switchPosition,
+        out Quaternion switchRotation)
+    {
+        switchPosition = sourcePlayer.transform.position;
+        switchRotation = sourcePlayer.transform.rotation;
+
+        if (supportType != SupportType.ParrySupport || enemy == null)
+            return;
+
+        Vector3 enemyToPlayer = sourcePlayer.transform.position - enemy.transform.position;
+        enemyToPlayer.y = 0f;
+
+        if (enemyToPlayer.sqrMagnitude < 0.0001f)
+        {
+            enemyToPlayer = enemy.transform.forward;
+            enemyToPlayer.y = 0f;
+        }
+
+        Vector3 spawnDirection = enemyToPlayer.normalized;
+        switchPosition = enemy.transform.position + spawnDirection * parrySpawnDistance;
+        switchPosition.y = sourcePlayer.transform.position.y;
+
+        Vector3 faceEnemyDirection = enemy.transform.position - switchPosition;
+        faceEnemyDirection.y = 0f;
+
+        if (faceEnemyDirection.sqrMagnitude > 0.0001f)
+            switchRotation = Quaternion.LookRotation(faceEnemyDirection.normalized, Vector3.up);
     }
 }

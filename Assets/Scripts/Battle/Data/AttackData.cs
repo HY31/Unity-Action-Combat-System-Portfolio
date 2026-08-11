@@ -1,4 +1,4 @@
-﻿using UnityEngine;
+using UnityEngine;
 
 [CreateAssetMenu(menuName = "Combat/Attack Data")]
 public class AttackData : ScriptableObject
@@ -32,6 +32,9 @@ public class AttackData : ScriptableObject
     [Header("Hit")]
     public HitPayload hitPayload;
 
+    [Header("HitBox Shape")]
+    public HitBoxShape hitBoxShape = HitBoxShape.Default;
+
     [Header("Combo")]
     public int nextComboIndex = -1;
 
@@ -42,6 +45,9 @@ public class AttackData : ScriptableObject
     [Min(0f)] public float forwardMoveDistance = 1f;
     [Range(0, 1)] public float moveStart = 0.1f;
     [Range(0, 1)] public float moveEnd = 0.4f;
+
+    [Header("Feedback")]
+    public HitFeedbackData hitFeedback = HitFeedbackData.Default;
 
     [Header("Auto Aim")]
     public bool useAutoAim = true;

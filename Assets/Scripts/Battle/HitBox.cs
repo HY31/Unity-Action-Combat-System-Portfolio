@@ -1,4 +1,4 @@
-﻿using UnityEngine;
+using UnityEngine;
 
 public enum DecibelRewardType
 {
@@ -7,9 +7,10 @@ public enum DecibelRewardType
     Skill
 }
 
+[RequireComponent(typeof(BoxCollider))]
 public class HitBox : MonoBehaviour
 {
-    private Collider hitCollider;
+    private BoxCollider hitCollider;
     private bool active;
 
     [Header("AttackStats")]
@@ -21,13 +22,15 @@ public class HitBox : MonoBehaviour
     private ThirdPersonCameraController camController;
 
     private DecibelRewardType rewardType = DecibelRewardType.None;
+    private HitFeedbackData feedback = HitFeedbackData.Default;
 
     private void Awake()
     {
-        hitCollider = GetComponent<Collider>();
+        hitCollider = GetComponent<BoxCollider>();
         SetActive(false);
 
-        camController = Camera.main.GetComponentInParent<ThirdPersonCameraController>();
+        if (Camera.main != null)
+            camController = Camera.main.GetComponentInParent<ThirdPersonCameraController>();
     }
 
     public void SetHitData(CombatHitData hitData)
@@ -48,14 +51,30 @@ public class HitBox : MonoBehaviour
         rewardType = type;
     }
 
+    public void SetFeedback(HitFeedbackData value)
+    {
+        feedback = value.Sanitized();
+    }
+
+    public void ConfigureShape(HitBoxShape value)
+    {
+        if (hitCollider == null)
+            hitCollider = GetComponent<BoxCollider>();
+
+        if (hitCollider == null)
+            return;
+
+        // 공격 데이터만 교체해 같은 오브젝트를 모든 공격 패턴에서 재사용한다.
+        HitBoxShape shape = value.Sanitized();
+        hitCollider.center = shape.center;
+        hitCollider.size = shape.size;
+    }
+
     private void OnTriggerEnter(Collider other)
     {
         if (!active) return;
 
-        Debug.Log(other);
-
         HurtBox hurtBox = other.GetComponent<HurtBox>();
-        Debug.Log($"피격 판정 영역 = {hurtBox}");
 
         if (hurtBox == null)
             hurtBox = other.GetComponentInParent<HurtBox>();
@@ -66,23 +85,38 @@ public class HitBox : MonoBehaviour
         if (ownerRoot != null && hurtBox.OwnerRoot == ownerRoot)
             return;
 
+        Vector3 sourcePosition = ownerRoot != null
+            ? ownerRoot.position
+            : transform.position;
+        bool heavyReaction =
+            feedback.hitStopDuration >= 0.07f ||
+            feedback.vfxScale >= 1.25f;
+
         // 무적 등으로 피격이 거부되면 카메라·히트스톱·자원 보상도 발생시키지 않는다.
-        if(hurtBox.TryTakeHit(hitData))
+        if (hurtBox.TryTakeHit(hitData, sourcePosition, heavyReaction))
         {
             Vector3 targetPosition = hurtBox.OwnerRoot != null
                 ? hurtBox.OwnerRoot.position
                 : other.bounds.center;
-            Vector3 sourcePosition = ownerRoot != null
-                ? ownerRoot.position
-                : transform.position;
             Vector3 hitDirection = targetPosition - sourcePosition;
             Vector3 impactPoint = other.ClosestPoint(transform.position);
 
             // 피격이 확정된 순간의 접촉 위치와 공격 속성만 연출 계층으로 전달한다.
-            CombatHitVfx.Play(impactPoint, hitDirection, hitData.resolvedElement);
+            CombatHitVfx.Play(
+                impactPoint,
+                hitDirection,
+                hitData.resolvedElement,
+                feedback.vfxScale);
+            CombatPresentationEffects.PlayHit(
+                hitData.resolvedElement,
+                feedback.vfxScale);
 
-            camController?.Shake();
-            HitStop.DoHitStop(0.05f);
+            camController?.ShakeImpact(
+                hitDirection,
+                feedback.cameraShakeDuration,
+                feedback.cameraShakeStrength,
+                feedback.cameraShakeVibrato);
+            HitStop.DoHitStop(feedback.hitStopDuration);
 
             // 공격의 실제 적중이 확정된 뒤에만 공격 종류에 맞는 데시벨을 지급한다.
             PlayerController ownerPlayer = ownerRoot != null ? ownerRoot.GetComponent<PlayerController>() : null;
