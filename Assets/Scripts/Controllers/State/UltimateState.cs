@@ -21,10 +21,20 @@ public class UltimateState : IPlayerState
     private float previousMovementTime;
 
     private UltimatePhase phase;
+    private bool chainSkillPending;
+    private bool isChainSkillEntry;
+    private bool ultimatePresentationStarted;
+    private Transform requestedAssistTarget;
 
     public UltimateState(PlayerController player)
     {
         this.player = player;
+    }
+
+    public void PrepareChainSkill(Transform target)
+    {
+        chainSkillPending = true;
+        requestedAssistTarget = target;
     }
 
     public void Enter()
@@ -49,8 +59,12 @@ public class UltimateState : IPlayerState
             return;
         }
 
-        if (!player.TryUseDecibel(ultData.decibelCost))
+        isChainSkillEntry = chainSkillPending;
+        chainSkillPending = false;
+
+        if (!isChainSkillEntry && !player.TryUseDecibel(ultData.decibelCost))
         {
+            requestedAssistTarget = null;
             player.ChangeState(player.LocomotionState);
             return;
         }
@@ -79,10 +93,15 @@ public class UltimateState : IPlayerState
         hitBox.ConfigureShape(ultData.hitBoxShape);
         hitBox.SetActive(false);
 
-        assistTarget = player.FindAttackTarget(ultData.autoAimRadius, ultData.autoAimMaxAngle);
+        assistTarget = requestedAssistTarget != null
+            ? requestedAssistTarget
+            : player.FindAttackTarget(ultData.autoAimRadius, ultData.autoAimMaxAngle);
+        requestedAssistTarget = null;
         ultAssistDirection = player.GetAttackAssistDirection(assistTarget);
 
-        CombatPresentationEffects.BeginUltimate(resolvedElement);
+        ultimatePresentationStarted = !isChainSkillEntry;
+        if (ultimatePresentationStarted)
+            CombatPresentationEffects.BeginUltimate(resolvedElement);
         player.SetInvincible(true);
         previousMovementTime = 0f;
         currentHitWindowIndex = -1;
@@ -249,7 +268,13 @@ public class UltimateState : IPlayerState
     public void Exit()
     {
         // 어떤 경로로 상태를 빠져나가도 무적과 타격 판정이 남지 않게 정리한다.
-        CombatPresentationEffects.EndUltimate();
+        if (ultimatePresentationStarted)
+            CombatPresentationEffects.EndUltimate();
+
+        ultimatePresentationStarted = false;
+        isChainSkillEntry = false;
+        chainSkillPending = false;
+        requestedAssistTarget = null;
         player.SetInvincible(false);
 
         hitBox?.SetActive(false);

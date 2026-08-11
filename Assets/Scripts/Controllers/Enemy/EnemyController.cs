@@ -18,6 +18,7 @@ public class EnemyController : MonoBehaviour
     [Header("Stats")]
     [SerializeField] private float currentHp = 100f;
     [SerializeField] private float currentStun = 0f;
+    [SerializeField] private bool isDefeated;
     [SerializeField] private bool isGroggy;
     [SerializeField] private float groggyTimeRemaining;
 
@@ -41,6 +42,7 @@ public class EnemyController : MonoBehaviour
     public float CurrentHitReactionGauge => currentHitReactionGauge;
     public bool IsInHitReaction => isInHitReaction;
     public bool IsGroggy => isGroggy;
+    public bool IsDefeated => isDefeated;
     public float CurrentAttackRecoveryDelay =>
         currentAttack != null
         ? Mathf.Max(0f, currentAttack.additionalRecoveryDelay)
@@ -51,6 +53,8 @@ public class EnemyController : MonoBehaviour
         ? Mathf.Max(1f, enemyData.groggyDamageMultiplier)
         : 1f;
     public static event System.Action<EnemyController, PlayerController> ChainSkillRequested;
+    public event System.Action<EnemyController, float> DamageTaken;
+    public event System.Action<EnemyController> Defeated;
     public float CurrentHpNormalized =>
         enemyData == null || enemyData.maxHp <= 0f
         ? 0f
@@ -160,6 +164,7 @@ public class EnemyController : MonoBehaviour
         InitializeWarningSigns();
 
         currentHp = enemyData.maxHp;
+        isDefeated = false;
         currentStun = 0f;
         currentHitReactionGauge = 0f;
         isGroggy = false;
@@ -263,6 +268,14 @@ public class EnemyController : MonoBehaviour
         attackSwingPlayed = false;
         ConfigureAttackHitBox(false);
         attackHitBox.SetFeedback(currentAttack.hitFeedback);
+        attackHitBox.SetHitData(new CombatHitData
+        {
+            rawDamage = Mathf.Max(0f, currentAttack.damage),
+            damageMultiplier = 1f,
+            impactMultiplier = 1f,
+            resolvedElement = CombatElement.None
+        });
+
         phase = EnemyAttackPhase.Attack;
 
         BeginAttackMovement();
@@ -859,6 +872,7 @@ public class EnemyController : MonoBehaviour
     }
     public void ReceiveHit(CombatHitData hitData)
     {
+        if (isDefeated) return;
         if (hitData.attacker == null) return;
         if (enemyData == null) return;
 
@@ -872,8 +886,10 @@ public class EnemyController : MonoBehaviour
 
         // 그로기 중 받는 피해 배율은 UI가 아닌 적 전투 데이터에서 결정한다.
         float finalDamage = baseDamage * defenseMultiplier * CurrentDamageTakenMultiplier;
+        float hpBeforeDamage = currentHp;
 
         currentHp = Mathf.Clamp(currentHp - finalDamage, 0f, enemyData.maxHp);
+        float appliedDamage = hpBeforeDamage - currentHp;
 
         bool emphasizeDamage =
             hitData.canTriggerChainSkill ||
@@ -884,6 +900,15 @@ public class EnemyController : MonoBehaviour
             finalDamage,
             hitData.resolvedElement,
             emphasizeDamage);
+
+        if (appliedDamage > 0f)
+            DamageTaken?.Invoke(this, appliedDamage);
+
+        if (currentHp <= 0f)
+        {
+            HandleDefeat();
+            return;
+        }
 
         float stunDamage = 0f;
         if (!isGroggy)
@@ -922,6 +947,29 @@ public class EnemyController : MonoBehaviour
                 break;
             }
         }
+    }
+
+    private void HandleDefeat()
+    {
+        if (isDefeated)
+            return;
+
+        isDefeated = true;
+        currentHp = 0f;
+        currentStun = 0f;
+        currentHitReactionGauge = 0f;
+        isInHitReaction = false;
+        isGroggy = false;
+        groggyTimeRemaining = 0f;
+
+        InterruptAttack();
+
+        EnemyCombatAI combatAI = GetComponent<EnemyCombatAI>();
+        if (combatAI != null)
+            combatAI.enabled = false;
+
+        enabled = false;
+        Defeated?.Invoke(this);
     }
 
     public float GetAnomalyGauge(CombatElement element)

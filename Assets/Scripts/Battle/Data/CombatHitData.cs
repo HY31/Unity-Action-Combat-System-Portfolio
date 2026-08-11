@@ -33,6 +33,8 @@ public struct CombatHitData
 {
     // 공격 시작 시 정적 HitPayload와 실제 공격자를 결합해 충돌 순간까지 전달한다.
     public PlayerController attacker;
+    // 적 공격처럼 PlayerController 공격자가 없는 경우 사용하는 확정 피해량이다.
+    public float rawDamage;
     public float damageMultiplier;
     public float impactMultiplier;
 

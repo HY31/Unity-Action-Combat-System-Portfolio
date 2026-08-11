@@ -23,6 +23,9 @@ public sealed class EnemyWorldStatusUI : MonoBehaviour
     [SerializeField] private Text stunPercentText;
     [SerializeField] private Text damageMultiplierText;
     [SerializeField] private GameObject anomalyIconRoot;
+    [SerializeField] private Image anomalyFill;
+    [SerializeField] private Image anomalyIcon;
+    [SerializeField] private ElementIconEntry[] anomalyIcons;
 
     [Header("Colors")]
     [SerializeField] private Color normalStunColor = new Color32(255, 205, 24, 255);
@@ -101,9 +104,7 @@ public sealed class EnemyWorldStatusUI : MonoBehaviour
             damageMultiplierText.text = $"DMG {Mathf.RoundToInt(targetEnemy.CurrentDamageTakenMultiplier * 100f)}%";
         }
 
-        // 현재는 아이콘 컨테이너의 표시만 담당하며 속성별 Sprite 연결은 다음 단계에서 확장한다.
-        if (anomalyIconRoot != null)
-            anomalyIconRoot.SetActive(true);
+        UpdateAnomalyVisual();
     }
 
     public void Bind(EnemyController enemy, Transform anchor = null)
@@ -133,6 +134,84 @@ public sealed class EnemyWorldStatusUI : MonoBehaviour
         damageMultiplierText = damageMultiplier;
         visualRoot = visuals;
         anomalyIconRoot = anomalyRoot;
+    }
+    public void Configure(
+        Image health,
+        Image stun,
+        Text stunPercent,
+        Text damageMultiplier,
+        GameObject visuals,
+        GameObject anomalyRoot,
+        Image anomalyGauge,
+        Image anomalyElementIcon)
+    {
+        Configure(health, stun, stunPercent, damageMultiplier, visuals, anomalyRoot);
+        anomalyFill = anomalyGauge;
+        anomalyIcon = anomalyElementIcon;
+    }
+
+    private void UpdateAnomalyVisual()
+    {
+        if (anomalyIconRoot == null || targetEnemy == null)
+            return;
+
+        float normalized = Mathf.Clamp01(targetEnemy.CurrentAnomalyNormalized);
+        CombatElement element = targetEnemy.DisplayAnomalyElement;
+        bool visible = normalized > 0f && element != CombatElement.None;
+        anomalyIconRoot.SetActive(visible);
+
+        if (!visible)
+            return;
+
+        Color elementColor = ResolveAnomalyColor(element);
+        if (anomalyFill != null)
+        {
+            anomalyFill.type = Image.Type.Filled;
+            anomalyFill.fillMethod = Image.FillMethod.Radial360;
+            anomalyFill.fillOrigin = (int)Image.Origin360.Top;
+            anomalyFill.fillClockwise = false;
+            anomalyFill.fillAmount = normalized;
+            anomalyFill.color = elementColor;
+        }
+
+        if (anomalyIcon == null)
+            return;
+
+        if (anomalyIcons != null)
+        {
+            for (int i = 0; i < anomalyIcons.Length; i++)
+            {
+                if (anomalyIcons[i].element != element || anomalyIcons[i].sprite == null)
+                    continue;
+
+                anomalyIcon.sprite = anomalyIcons[i].sprite;
+                break;
+            }
+        }
+
+        anomalyIcon.enabled = true;
+        anomalyIcon.color = Color.Lerp(Color.white, elementColor, 0.35f);
+    }
+
+    private static Color ResolveAnomalyColor(CombatElement element)
+    {
+        switch (element)
+        {
+            case CombatElement.Fire:
+                return new Color32(255, 86, 42, 255);
+            case CombatElement.Ice:
+                return new Color32(88, 220, 255, 255);
+            case CombatElement.Physical:
+                return new Color32(255, 201, 47, 255);
+            case CombatElement.Electric:
+                return new Color32(165, 92, 255, 255);
+            case CombatElement.Wind:
+                return new Color32(85, 236, 158, 255);
+            case CombatElement.Ether:
+                return new Color32(255, 91, 206, 255);
+            default:
+                return Color.white;
+        }
     }
 
     private Color GetGroggyFlashColor()

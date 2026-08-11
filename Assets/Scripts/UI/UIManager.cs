@@ -10,15 +10,26 @@ public sealed class UIManager : MonoBehaviour
 
     [Header("HUD Views")]
     [SerializeField] private PartyStatusUI partyStatusUI;
+    [SerializeField] private ChainSkillPromptUI chainSkillPromptUI;
 
     [Header("Fallback")]
     [SerializeField] private bool autoFindReferences = true;
 
     private PartyManager boundPartyManager;
     private PlayerController[] boundMembers = Array.Empty<PlayerController>();
+    private SupportPointManager boundSupportPointManager;
+    private ChainSkillPromptUI boundChainSkillPromptUI;
+    private static UIManager activeInstance;
 
     private void OnEnable()
     {
+        if (activeInstance != null && activeInstance != this)
+        {
+            enabled = false;
+            return;
+        }
+
+        activeInstance = this;
         TryBind();
     }
 
@@ -34,6 +45,8 @@ public sealed class UIManager : MonoBehaviour
             return;
 
         if (boundPartyManager != partyManager ||
+            boundSupportPointManager != partyManager.SupportPointManager ||
+            boundChainSkillPromptUI != chainSkillPromptUI ||
             !AreSameMembers(boundMembers, partyManager.partyMembers))
         {
             BindDataSources();
@@ -43,6 +56,8 @@ public sealed class UIManager : MonoBehaviour
     private void OnDisable()
     {
         UnbindDataSources();
+        if (activeInstance == this)
+            activeInstance = null;
     }
 
     public void Bind(PartyManager manager, PartyStatusUI partyHud)
@@ -72,6 +87,9 @@ public sealed class UIManager : MonoBehaviour
 
             if (partyStatusUI == null)
                 partyStatusUI = FindFirstObjectByType<PartyStatusUI>();
+
+            if (chainSkillPromptUI == null)
+                chainSkillPromptUI = FindFirstObjectByType<ChainSkillPromptUI>();
         }
 
         return partyManager != null && partyStatusUI != null;
@@ -86,6 +104,14 @@ public sealed class UIManager : MonoBehaviour
 
         boundPartyManager = partyManager;
         boundPartyManager.ActiveCharacterChanged += HandleActiveCharacterChanged;
+        boundSupportPointManager = partyManager.SupportPointManager;
+        if (boundSupportPointManager != null)
+            boundSupportPointManager.SupportPointChanged += HandleSupportPointChanged;
+
+
+        boundChainSkillPromptUI = chainSkillPromptUI;
+        if (boundChainSkillPromptUI != null)
+            boundChainSkillPromptUI.SelectionConfirmed += HandleChainSkillSelected;
 
         PlayerController[] members = partyManager.partyMembers;
         if (members != null && members.Length > 0)
@@ -95,12 +121,22 @@ public sealed class UIManager : MonoBehaviour
 
             foreach (PlayerController member in boundMembers)
             {
-                if (member != null)
-                    member.EnergyChanged += HandleEnergyChanged;
+                if (member == null)
+                    continue;
+
+                member.EnergyChanged += HandleEnergyChanged;
+                member.HealthChanged += HandleHealthChanged;
+                member.DecibelChanged += HandleDecibelChanged;
             }
         }
 
         partyStatusUI.Bind(partyManager);
+        foreach (PlayerController member in boundMembers)
+        {
+            if (member != null)
+                partyStatusUI.SetMemberHealth(member, member.CurrentHp, member.CurrentMaxHp);
+        }
+
         RefreshAll();
     }
 
@@ -109,13 +145,25 @@ public sealed class UIManager : MonoBehaviour
         if (boundPartyManager != null)
             boundPartyManager.ActiveCharacterChanged -= HandleActiveCharacterChanged;
 
+
+        if (boundSupportPointManager != null)
+            boundSupportPointManager.SupportPointChanged -= HandleSupportPointChanged;
+
+        if (boundChainSkillPromptUI != null)
+            boundChainSkillPromptUI.SelectionConfirmed -= HandleChainSkillSelected;
         foreach (PlayerController member in boundMembers)
         {
-            if (member != null)
-                member.EnergyChanged -= HandleEnergyChanged;
+            if (member == null)
+                continue;
+
+            member.EnergyChanged -= HandleEnergyChanged;
+            member.HealthChanged -= HandleHealthChanged;
+            member.DecibelChanged -= HandleDecibelChanged;
         }
 
         boundPartyManager = null;
+        boundSupportPointManager = null;
+        boundChainSkillPromptUI = null;
         boundMembers = Array.Empty<PlayerController>();
     }
 
@@ -127,6 +175,26 @@ public sealed class UIManager : MonoBehaviour
     private void HandleEnergyChanged(PlayerController member)
     {
         RefreshAll();
+    }
+    private void HandleHealthChanged(PlayerController member)
+    {
+        if (member != null)
+            partyStatusUI?.SetMemberHealth(member, member.CurrentHp, member.CurrentMaxHp);
+    }
+
+    private void HandleDecibelChanged(PlayerController member)
+    {
+        RefreshAll();
+    }
+
+    private void HandleSupportPointChanged(SupportPointManager manager)
+    {
+        RefreshAll();
+    }
+
+    private void HandleChainSkillSelected(int side, EnemyController enemy)
+    {
+        boundPartyManager?.TryExecuteChainSkill(side, enemy);
     }
 
     private static bool AreSameMembers(PlayerController[] left, PlayerController[] right)

@@ -42,6 +42,14 @@ public class PlayerController : MonoBehaviour
     public float CurrentCritDamage => CurrentStat.critDamage;
     public float CurrentPenRatio => CurrentStat.penRatio;
 
+    [SerializeField, Min(0f)] private float currentHp;
+    public float CurrentHp => currentHp;
+    public float CurrentHpNormalized => CurrentMaxHp > 0f
+        ? Mathf.Clamp01(currentHp / CurrentMaxHp)
+        : 0f;
+    public bool IsDefeated => currentHp <= 0f;
+    public event System.Action<PlayerController> HealthChanged;
+
 
     [Header("Reference")]
     [SerializeField] private Transform cameraYawPivot;
@@ -113,6 +121,7 @@ public class PlayerController : MonoBehaviour
     public float MaxDecibel => maxDecibel;
     public float CurrentDecibel => currentDecibel;
     public bool CanUseUltimate => currentDecibel >= maxDecibel;
+    public event System.Action<PlayerController> DecibelChanged;
 
     public TMP_Text decibelText_temp;
 
@@ -141,6 +150,9 @@ public class PlayerController : MonoBehaviour
             return;
         }
 
+        // 파티 HUD와 전투 판정이 같은 런타임 체력 원본을 사용하도록 시작 시 최대 체력으로 초기화한다.
+        currentHp = Mathf.Max(0f, CurrentMaxHp);
+
         LocomotionState = new LocomotionState(this);
         AttackState = new AttackState(this);
         DodgeState = new DodgeState(this);
@@ -163,6 +175,9 @@ public class PlayerController : MonoBehaviour
 
     private void Update()
     {
+        if (ChainSkillPromptUI.IsAnyOpen)
+            MoveInput = Vector2.zero;
+
         currentState?.Update();
 
         if (decibelText_temp != null)
@@ -184,13 +199,23 @@ public class PlayerController : MonoBehaviour
 
     public bool TryReceiveHit()
     {
-        return TryReceiveHit(transform.position - transform.forward, false);
+        return TryReceiveHit(default, transform.position - transform.forward, false);
     }
 
     public bool TryReceiveHit(Vector3 sourcePosition, bool heavyReaction)
     {
-        if (IsInvincible)
+        return TryReceiveHit(default, sourcePosition, heavyReaction);
+    }
+
+    public bool TryReceiveHit(
+        CombatHitData hitData,
+        Vector3 sourcePosition,
+        bool heavyReaction)
+    {
+        if (IsInvincible || IsDefeated)
             return false;
+
+        ApplyDamage(hitData.rawDamage);
 
         Vector3 awayFromSource = transform.position - sourcePosition;
         awayFromSource.y = 0f;
@@ -208,6 +233,34 @@ public class PlayerController : MonoBehaviour
         LastHitWasHeavy = heavyReaction;
         ChangeState(HitState);
         return true;
+    }
+
+    public void ApplyDamage(float damage)
+    {
+        damage = Mathf.Max(0f, damage);
+        if (damage <= 0f || IsDefeated)
+            return;
+
+        SetCurrentHealth(currentHp - damage);
+    }
+
+    public void RestoreHealth(float amount)
+    {
+        amount = Mathf.Max(0f, amount);
+        if (amount <= 0f)
+            return;
+
+        SetCurrentHealth(currentHp + amount);
+    }
+
+    private void SetCurrentHealth(float value)
+    {
+        float clampedValue = Mathf.Clamp(value, 0f, Mathf.Max(0f, CurrentMaxHp));
+        if (Mathf.Approximately(currentHp, clampedValue))
+            return;
+
+        currentHp = clampedValue;
+        HealthChanged?.Invoke(this);
     }
 
     public void HandleGravity()
@@ -410,7 +463,7 @@ public class PlayerController : MonoBehaviour
 
     public void GainDecibel(float amount)
     {
-        currentDecibel = Mathf.Clamp(currentDecibel + amount, 0f, maxDecibel);
+        SetDecibel(currentDecibel + amount);
     }
 
     public bool TryUseDecibel(float cost)
@@ -418,8 +471,18 @@ public class PlayerController : MonoBehaviour
         if (currentDecibel < cost)
             return false;
 
-        currentDecibel -= cost;
+        SetDecibel(currentDecibel - cost);
         return true;
+    }
+
+    private void SetDecibel(float value)
+    {
+        float clampedValue = Mathf.Clamp(value, 0f, maxDecibel);
+        if (Mathf.Approximately(currentDecibel, clampedValue))
+            return;
+
+        currentDecibel = clampedValue;
+        DecibelChanged?.Invoke(this);
     }
 
     public void GrantDecibelForNormalHit()
@@ -448,11 +511,19 @@ public class PlayerController : MonoBehaviour
     #region Input
     public void OnMove(InputValue value)
     {
+        if (ChainSkillPromptUI.IsAnyOpen)
+        {
+            MoveInput = Vector2.zero;
+            return;
+        }
+
         MoveInput = value.Get<Vector2>();
     }
 
     public void OnAttack(InputValue value)
     {
+        if (ChainSkillPromptUI.IsAnyOpen) return;
+
         if (value.isPressed)
             currentState?.HandleAttack();
     }
@@ -460,6 +531,8 @@ public class PlayerController : MonoBehaviour
     public void OnDodge(InputValue value)
     {
         if (!value.isPressed) return;
+        if (ChainSkillPromptUI.IsAnyOpen) return;
+
 
         EnemyController dodgeEnemy = partyManager.FindReactionEnemy(this);
 
@@ -481,12 +554,17 @@ public class PlayerController : MonoBehaviour
 
     public void OnSkill(InputValue value)
     {
+        if (ChainSkillPromptUI.IsAnyOpen) return;
+
         if (value.isPressed)
             currentState?.HandleSkill();
     }
 
     public void OnUltimate(InputValue value)
     {
+        if (ChainSkillPromptUI.IsAnyOpen)
+            return;
+
         if (!value.isPressed)
             return;
 
@@ -510,6 +588,9 @@ public class PlayerController : MonoBehaviour
 
     public void OnSwitch_Nxt(InputValue value)
     {
+        if (ChainSkillPromptUI.IsAnyOpen)
+            return;
+
         if (!value.isPressed)
             return;
 
@@ -524,6 +605,9 @@ public class PlayerController : MonoBehaviour
 
     public void OnSwitch_Pre(InputValue value)
     {
+        if (ChainSkillPromptUI.IsAnyOpen)
+            return;
+
         if (!value.isPressed)
             return;
 

@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.Events;
+using UnityEngine.InputSystem;
 using UnityEngine.UI;
 using DG.Tweening;
 
@@ -32,8 +33,12 @@ public sealed class ChainSkillPromptUI : MonoBehaviour
     private float remaining;
     private bool isOpen;
     private Tween visibilityTween;
+    private EnemyController requestedEnemy;
+    private static int openPromptCount;
 
     public bool IsOpen => isOpen;
+    public static bool IsAnyOpen => openPromptCount > 0;
+    public event System.Action<int, EnemyController> SelectionConfirmed;
 
     private void Awake()
     {
@@ -62,9 +67,12 @@ public sealed class ChainSkillPromptUI : MonoBehaviour
         remaining = Mathf.Max(0f, remaining - Time.unscaledDeltaTime);
         RefreshTime();
 
-        if (Input.GetKeyDown(leftKey))
+        bool leftMousePressed = Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame;
+        bool rightMousePressed = Mouse.current != null && Mouse.current.rightButton.wasPressedThisFrame;
+
+        if (leftMousePressed || Input.GetKeyDown(leftKey))
             Select(0);
-        else if (Input.GetKeyDown(rightKey))
+        else if (rightMousePressed || Input.GetKeyDown(rightKey))
             Select(1);
         else if (Input.GetKeyDown(cancelKey) || remaining <= 0f)
             Cancel();
@@ -74,6 +82,9 @@ public sealed class ChainSkillPromptUI : MonoBehaviour
     {
         duration = Mathf.Max(0.1f, seconds);
         remaining = duration;
+        if (!isOpen)
+            openPromptCount++;
+
         isOpen = true;
 
         if (leftPortrait != null && left != null)
@@ -92,9 +103,13 @@ public sealed class ChainSkillPromptUI : MonoBehaviour
         if (!isOpen)
             return;
 
-        // 이 UI는 선택 결과만 알리고 실제 교체·스킬 실행은 전투 조정자가 결정한다.
-        onSelected?.Invoke(Mathf.Clamp(side, 0, 1));
+        int selectedSide = Mathf.Clamp(side, 0, 1);
+        EnemyController enemy = requestedEnemy;
+
+        // UI를 먼저 입력 잠금 상태에서 해제한 뒤 전투 조정자에게 선택 결과를 전달한다.
         HideAnimated();
+        onSelected?.Invoke(selectedSide);
+        SelectionConfirmed?.Invoke(selectedSide, enemy);
     }
 
     public void Cancel()
@@ -122,6 +137,8 @@ public sealed class ChainSkillPromptUI : MonoBehaviour
 
     private void HandleChainSkillRequested(EnemyController enemy, PlayerController attacker)
     {
+        requestedEnemy = enemy;
+
         // 파티 순서를 소유한 UI에서 이전/다음 캐릭터 초상화만 가져온다.
         PartyStatusUI partyHud = FindFirstObjectByType<PartyStatusUI>();
         Sprite left = partyHud != null ? partyHud.GetPreviousPortrait() : null;
@@ -163,8 +180,12 @@ public sealed class ChainSkillPromptUI : MonoBehaviour
 
     private void HideAnimated()
     {
+        if (isOpen)
+            openPromptCount = Mathf.Max(0, openPromptCount - 1);
+
         isOpen = false;
         remaining = 0f;
+        requestedEnemy = null;
         CombatPresentationEffects.EndChainPrompt();
 
         if (canvasGroup == null)
@@ -189,8 +210,12 @@ public sealed class ChainSkillPromptUI : MonoBehaviour
     private void HideImmediate()
     {
         bool wasOpen = isOpen;
+        if (wasOpen)
+            openPromptCount = Mathf.Max(0, openPromptCount - 1);
+
         isOpen = false;
         remaining = 0f;
+        requestedEnemy = null;
         visibilityTween?.Kill(false);
         visibilityTween = null;
 

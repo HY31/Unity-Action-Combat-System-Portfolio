@@ -22,6 +22,15 @@ public sealed class PartyStatusUI : MonoBehaviour
         public Text healthText;
     }
 
+    [Serializable]
+    public sealed class ResourceView
+    {
+        public Image decibelFill;
+        public Text decibelText;
+        public Image[] supportPointPips;
+    }
+
+
     [Header("Data")]
     [SerializeField] private PartyManager partyManager;
     [SerializeField] private Sprite[] memberPortraits;
@@ -29,6 +38,7 @@ public sealed class PartyStatusUI : MonoBehaviour
     [Header("Views")]
     [SerializeField] private SlotView activeSlot;
     [SerializeField] private SlotView[] reserveSlots;
+    [SerializeField] private ResourceView combatResources;
 
     [Header("Energy State")]
     [SerializeField] private Color energyNormalColor = new Color32(84, 88, 86, 255);
@@ -36,6 +46,11 @@ public sealed class PartyStatusUI : MonoBehaviour
     [SerializeField] private Color energyMarkerNormalColor = new Color32(92, 96, 94, 255);
     [SerializeField] private Color energyMarkerReadyColor = new Color32(225, 25, 48, 255);
     [SerializeField, Range(0f, 1f)] private float fallbackReadyThreshold = 0.5f;
+
+    [Header("Combat Resources")]
+    [SerializeField] private Color decibelNormalColor = new Color32(65, 190, 255, 255);
+    [SerializeField] private Color decibelReadyColor = new Color32(255, 191, 22, 255);
+    [SerializeField] private Color supportPointEmptyColor = new Color32(49, 54, 54, 210);
 
     private float[] healthNormalized;
     private float[] healthCurrent;
@@ -58,9 +73,15 @@ public sealed class PartyStatusUI : MonoBehaviour
 
     public void Configure(SlotView active, SlotView[] reserves, Sprite[] portraits)
     {
+        Configure(active, reserves, portraits, null);
+    }
+
+    public void Configure(SlotView active, SlotView[] reserves, Sprite[] portraits, ResourceView resources)
+    {
         activeSlot = active;
         reserveSlots = reserves;
         memberPortraits = portraits;
+        combatResources = resources;
         ConfigureEnergyImages();
         RefreshNow();
     }
@@ -106,6 +127,7 @@ public sealed class PartyStatusUI : MonoBehaviour
         PlayerController active = partyManager.GetCurrentCharacter();
         bool activeChanged = activeMemberInitialized && active != lastActiveMember;
         ApplySlot(activeSlot, active, true);
+        ApplyCombatResources(active);
 
         if (activeChanged)
             PlayActiveSlotTransition();
@@ -200,6 +222,54 @@ public sealed class PartyStatusUI : MonoBehaviour
             Image markerImage = slot.energyThresholdMarker.GetComponent<Image>();
             if (markerImage != null)
                 markerImage.color = enhancedReady ? energyMarkerReadyColor : energyMarkerNormalColor;
+        }
+    }
+    private void ApplyCombatResources(PlayerController member)
+    {
+        if (combatResources == null || member == null)
+            return;
+
+        float decibelMaximum = Mathf.Max(0f, member.MaxDecibel);
+        float decibelNormalized = decibelMaximum > 0f
+            ? Mathf.Clamp01(member.CurrentDecibel / decibelMaximum)
+            : 0f;
+        bool ultimateReady = member.CanUseUltimate;
+
+        if (combatResources.decibelFill != null)
+        {
+            combatResources.decibelFill.type = Image.Type.Filled;
+            combatResources.decibelFill.fillMethod = Image.FillMethod.Horizontal;
+            combatResources.decibelFill.fillOrigin = (int)Image.OriginHorizontal.Left;
+            combatResources.decibelFill.fillAmount = decibelNormalized;
+            combatResources.decibelFill.color = ultimateReady ? decibelReadyColor : decibelNormalColor;
+        }
+
+        if (combatResources.decibelText != null)
+        {
+            combatResources.decibelText.text =
+                $"{Mathf.RoundToInt(member.CurrentDecibel)} / {Mathf.RoundToInt(decibelMaximum)}";
+            combatResources.decibelText.color = ultimateReady ? decibelReadyColor : Color.white;
+        }
+
+        SupportPointManager support = partyManager != null
+            ? partyManager.SupportPointManager
+            : member.SupportPointManager;
+        int currentSupport = support != null ? support.CurrentSupportPoint : 0;
+        int maximumSupport = support != null ? support.MaxSupportPoint : 0;
+
+        if (combatResources.supportPointPips == null)
+            return;
+
+        for (int i = 0; i < combatResources.supportPointPips.Length; i++)
+        {
+            Image pip = combatResources.supportPointPips[i];
+            if (pip == null)
+                continue;
+
+            bool isValidSlot = i < maximumSupport;
+            pip.gameObject.SetActive(isValidSlot);
+            if (isValidSlot)
+                pip.color = i < currentSupport ? decibelReadyColor : supportPointEmptyColor;
         }
     }
 

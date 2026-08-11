@@ -33,7 +33,7 @@ public class HurtBox : MonoBehaviour
     {
         // 반환값은 HitBox가 후속 적중 연출과 보상을 실행해도 되는지를 뜻한다.
         if (ownerPlayer != null)
-            return ownerPlayer.TryReceiveHit(sourcePosition, heavyReaction);
+            return ownerPlayer.TryReceiveHit(hitData, sourcePosition, heavyReaction);
 
         if (ownerEnemy != null)
         {

@@ -64,10 +64,14 @@ public sealed class PlayerStatusUI : MonoBehaviour
 
     private void Refresh(bool instant)
     {
-        if (targetPlayer == null || energyGauge == null)
+        if (targetPlayer == null)
             return;
 
-        // 현재 PlayerController가 직접 소유하는 자원만 자동 갱신한다.
-        energyGauge.SetValue(targetPlayer.CurrentEnergy, targetPlayer.MaxEnergy, instant);
+        // 단일 HUD도 PlayerController가 소유하는 현재 체력과 에너지를 같은 시점에 갱신한다.
+        if (healthGauge != null)
+            healthGauge.SetValue(targetPlayer.CurrentHp, targetPlayer.CurrentMaxHp, instant);
+
+        if (energyGauge != null)
+            energyGauge.SetValue(targetPlayer.CurrentEnergy, targetPlayer.MaxEnergy, instant);
     }
 }

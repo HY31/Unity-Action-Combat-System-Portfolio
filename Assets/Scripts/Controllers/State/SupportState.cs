@@ -110,7 +110,11 @@ public class SupportState : IPlayerState
         appliedRecoilDistance = 0f;
 
         FaceParryTarget();
-        parryTarget?.ApplyParryReaction();
+        if (parryTarget != null)
+        {
+            parryTarget.ApplyParryReaction();
+            CombatOperationEvents.Report(CombatOperationType.DefensiveAssist, player);
+        }
         ResolveRecoilDirection();
 
         string impactAnimation = player.CharacterData.parrySupportHeavyAnim;

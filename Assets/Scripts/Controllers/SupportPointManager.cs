@@ -6,6 +6,7 @@ public class SupportPointManager : MonoBehaviour
     private int currentSupportPoint = 6;
     public int MaxSupportPoint => maxSupportPoint;
     public int CurrentSupportPoint => currentSupportPoint;
+    public event System.Action<SupportPointManager> SupportPointChanged;
 
     void Start()
     {
@@ -29,15 +30,22 @@ public class SupportPointManager : MonoBehaviour
             return false;
 
         currentSupportPoint -= cost;
+        SupportPointChanged?.Invoke(this);
         return true;
     }
 
     public void GainSupportPoint(int amount = 1)
     {
-        currentSupportPoint = Mathf.Clamp(
+        int nextValue = Mathf.Clamp(
             currentSupportPoint + amount,
             0,
             maxSupportPoint
         );
+
+        if (nextValue == currentSupportPoint)
+            return;
+
+        currentSupportPoint = nextValue;
+        SupportPointChanged?.Invoke(this);
     }
 }

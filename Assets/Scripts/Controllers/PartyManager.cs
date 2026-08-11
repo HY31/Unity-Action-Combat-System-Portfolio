@@ -16,7 +16,9 @@ public class PartyManager : MonoBehaviour
     [SerializeField] private ThirdPersonCameraController cameraController;
 
     [SerializeField] private SupportPointManager supportPointManager;
+    public SupportPointManager SupportPointManager => supportPointManager;
     [SerializeField, Min(0.5f)] private float parrySpawnDistance = 4.5f;
+    [SerializeField, Min(0.5f)] private float chainSkillSpawnDistance = 4.5f;
 
     void Awake()
     {
@@ -125,6 +127,40 @@ public class PartyManager : MonoBehaviour
         ActiveCharacterChanged?.Invoke(switchedPlayer);
 
         return switchedPlayer;
+    }
+
+    public bool TryExecuteChainSkill(int side, EnemyController enemy)
+    {
+        if (enemy == null || partyMembers == null || partyMembers.Length < 2)
+            return false;
+
+        int offset = side <= 0 ? -1 : 1;
+        int targetIndex = (currentIndex + offset + partyMembers.Length) % partyMembers.Length;
+        PlayerController sourcePlayer = partyMembers[currentIndex];
+
+        Vector3 enemyToPlayer = sourcePlayer.transform.position - enemy.transform.position;
+        enemyToPlayer.y = 0f;
+        if (enemyToPlayer.sqrMagnitude < 0.0001f)
+            enemyToPlayer = -enemy.transform.forward;
+
+        Vector3 spawnDirection = enemyToPlayer.normalized;
+        Vector3 spawnPosition = enemy.transform.position + spawnDirection * chainSkillSpawnDistance;
+        spawnPosition.y = sourcePlayer.transform.position.y;
+
+        Vector3 faceEnemy = enemy.transform.position - spawnPosition;
+        faceEnemy.y = 0f;
+        Quaternion spawnRotation = faceEnemy.sqrMagnitude > 0.0001f
+            ? Quaternion.LookRotation(faceEnemy.normalized, Vector3.up)
+            : sourcePlayer.transform.rotation;
+
+        PlayerController chainPlayer = SwitchTo(targetIndex, spawnPosition, spawnRotation);
+        if (chainPlayer == null || chainPlayer.UltimateState == null)
+            return false;
+
+        chainPlayer.UltimateState.PrepareChainSkill(enemy.transform);
+        chainPlayer.ChangeState(chainPlayer.UltimateState);
+        CombatOperationEvents.Report(CombatOperationType.ChainSkill, chainPlayer);
+        return true;
     }
 
     public void Switch_Nxt()

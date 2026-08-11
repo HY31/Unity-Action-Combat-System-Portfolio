@@ -55,7 +55,10 @@ public class DodgeState : IPlayerState
         player.Animator.CrossFade(characterData.dodgeFrontAnim, 0.05f);
 
         if (dodgeType == DodgeType.Perfect)
+        {
             CombatPresentationEffects.PlayPerfectDodge();
+            CombatOperationEvents.Report(CombatOperationType.PerfectDodge, player);
+        }
     }
 
     public void Update()
