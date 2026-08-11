@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEditor;
@@ -20,7 +20,7 @@ internal static class DeadEndButcherEnemySetup
     private const string AttackDataRoot = "Assets/ScriptableObject/Enemy";
     private const string MaterialRoot = "Assets/ThirdParty/ZZZ_DeadEndButcher/Materials";
     private const string LegacyModelPath = "Assets/Monster/Monster_Durahan_LOD3";
-    private const float BodyCollisionHeight = 100f;
+    private const float BodyBlockingRadius = 2f;
 
     private static readonly string[] LegacyAssetPaths =
     {
@@ -421,16 +421,17 @@ internal static class DeadEndButcherEnemySetup
         if (bodyCollider == null)
             bodyCollider = bodyCollisionTransform.gameObject.AddComponent<BoxCollider>();
 
-        bodyCollider.isTrigger = false;
+        // 물리 충돌체는 CharacterController를 위로 밀 수 있으므로 판정에서 완전히 제외한다.
+        bodyCollider.isTrigger = true;
+        bodyCollider.enabled = false;
 
-        // 공중 공격 중 캐릭터가 보스 머리 위에 착지하지 않도록 충돌 기둥을 충분히 높게 유지한다.
-        Vector3 center = bodyCollider.center;
-        Vector3 size = bodyCollider.size;
-        center.y = BodyCollisionHeight * 0.5f;
-        size.y = BodyCollisionHeight;
-        bodyCollider.center = center;
-        bodyCollider.size = size;
+        EnemyBodyBlocker bodyBlocker = enemyRoot.GetComponent<EnemyBodyBlocker>();
+        if (bodyBlocker == null)
+            bodyBlocker = enemyRoot.AddComponent<EnemyBodyBlocker>();
+
+        bodyBlocker.Configure(null, BodyBlockingRadius);
         EditorUtility.SetDirty(bodyCollider);
+        EditorUtility.SetDirty(bodyBlocker);
     }
 
     private static Transform FindDirectVisual(Transform root, string nameFragment)

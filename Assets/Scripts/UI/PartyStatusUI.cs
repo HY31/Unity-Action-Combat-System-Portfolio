@@ -88,7 +88,7 @@ public sealed class PartyStatusUI : MonoBehaviour
 
     public void SetMemberHealth(PlayerController member, float current, float maximum)
     {
-        // 현재 HP가 PlayerController에 들어가기 전까지 파티 UI가 멤버별 표시값을 임시 보관한다.
+        // 멤버별 체력 이벤트를 슬롯 순서와 분리해 보관한 뒤 현재 파티 배치에 맞춰 표시한다.
         int index = IndexOf(member);
         if (index < 0)
             return;

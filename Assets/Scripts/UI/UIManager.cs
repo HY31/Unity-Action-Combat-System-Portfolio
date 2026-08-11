@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using UnityEngine;
 
 [DefaultExecutionOrder(100)]
@@ -20,6 +20,24 @@ public sealed class UIManager : MonoBehaviour
     private SupportPointManager boundSupportPointManager;
     private ChainSkillPromptUI boundChainSkillPromptUI;
     private static UIManager activeInstance;
+
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
+    private static void EnsureSceneManager()
+    {
+        if (UnityEngine.Object.FindFirstObjectByType<UIManager>() != null)
+            return;
+
+        PartyStatusUI partyHud =
+            UnityEngine.Object.FindFirstObjectByType<PartyStatusUI>();
+        if (partyHud == null)
+            return;
+
+        Canvas canvas = partyHud.GetComponentInParent<Canvas>();
+        GameObject host = canvas != null ? canvas.gameObject : partyHud.gameObject;
+
+        // 화면 프리팹에 관리자가 빠져 있어도 런타임 데이터 연결만 자동으로 복구한다.
+        host.AddComponent<UIManager>();
+    }
 
     private void OnEnable()
     {

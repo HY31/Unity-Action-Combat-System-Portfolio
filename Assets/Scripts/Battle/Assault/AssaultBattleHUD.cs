@@ -73,6 +73,25 @@ public sealed class AssaultBattleHUD : MonoBehaviour
         RefreshAll();
     }
 
+    private void LateUpdate()
+    {
+        if (battleController == null)
+        {
+            ResolveBattleController();
+            Subscribe();
+        }
+
+        if (battleController == null ||
+            battleController.State != AssaultBattleState.Fighting)
+        {
+            return;
+        }
+
+        // 이벤트 연결 여부와 관계없이 화면은 현재 전투 원본 값을 최종적으로 따라간다.
+        UpdateTimer(battleController.RemainingTime);
+        UpdateScore(battleController.CurrentScore);
+    }
+
     private void OnDisable()
     {
         Unsubscribe();

@@ -876,6 +876,9 @@ internal static class CombatHudPrefabBuilder
         scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
         scaler.matchWidthOrHeight = 0.5f;
 
+        // 생성된 HUD가 그림만 가진 채 남지 않도록 파티 데이터 연결 관리자도 함께 저장한다.
+        canvasObject.AddComponent<UIManager>();
+
         RectTransform player = InstantiateUiPrefab(playerPrefab, canvasObject.transform);
         player.anchorMin = new Vector2(0f, 1f);
         player.anchorMax = new Vector2(0f, 1f);

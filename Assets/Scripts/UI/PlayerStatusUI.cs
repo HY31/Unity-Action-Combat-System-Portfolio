@@ -1,8 +1,8 @@
-﻿using UnityEngine;
+using UnityEngine;
 
 /// <summary>
 /// 단일 PlayerController의 런타임 자원을 플레이어 상태 UI에 전달한다.
-/// 에너지는 직접 조회하고, 현재 HP가 아직 컨트롤러에 없으므로 체력은 외부 갱신도 받을 수 있게 둔다.
+/// 체력과 에너지는 컨트롤러를 직접 조회하고, 외부 시스템의 즉시 갱신 진입점도 제공한다.
 /// </summary>
 [DisallowMultipleComponent]
 public sealed class PlayerStatusUI : MonoBehaviour
@@ -34,7 +34,7 @@ public sealed class PlayerStatusUI : MonoBehaviour
 
     public void SetHealth(float current, float maximum, bool instant = false)
     {
-        // PlayerController에 현재 HP 소유 구조가 생기기 전까지 외부 전투 시스템이 체력을 주입하는 진입점이다.
+        // 전투 연출처럼 즉시 표시해야 하는 외부 시스템도 같은 체력 게이지를 갱신할 수 있다.
         if (healthGauge != null)
             healthGauge.SetValue(current, maximum, instant);
     }

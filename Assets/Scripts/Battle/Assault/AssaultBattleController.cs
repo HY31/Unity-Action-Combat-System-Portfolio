@@ -87,6 +87,7 @@ public sealed class AssaultBattleController : MonoBehaviour
         if (state != AssaultBattleState.Fighting)
             return;
 
+        RefreshDamageScoreFromBoss();
         elapsedTime = Mathf.Min(battleDuration, elapsedTime + Time.deltaTime);
         remainingTime = Mathf.Max(0f, battleDuration - elapsedTime);
         RemainingTimeChanged?.Invoke(remainingTime);
@@ -249,14 +250,33 @@ public sealed class AssaultBattleController : MonoBehaviour
             return;
         }
 
-        float maximumDamage = Mathf.Max(0f, boss.MaxHp);
-        damageDealt = Mathf.Clamp(damageDealt + damage, 0f, maximumDamage);
+        RefreshDamageScoreFromBoss();
+    }
 
-        damageScore = maximumDamage <= 0f
+    private void RefreshDamageScoreFromBoss()
+    {
+        if (boss == null)
+            return;
+
+        float maximumDamage = Mathf.Max(0f, boss.MaxHp);
+        float observedDamage = maximumDamage <= 0f
+            ? 0f
+            : Mathf.Clamp(maximumDamage - boss.CurrentHp, 0f, maximumDamage);
+        int observedScore = maximumDamage <= 0f
             ? 0
             : Mathf.RoundToInt(
-                damageDealt / maximumDamage * maximumDamageScore);
-        damageScore = Mathf.Clamp(damageScore, 0, maximumDamageScore);
+                observedDamage / maximumDamage * maximumDamageScore);
+        observedScore = Mathf.Clamp(observedScore, 0, maximumDamageScore);
+
+        if (Mathf.Approximately(damageDealt, observedDamage) &&
+            damageScore == observedScore)
+        {
+            return;
+        }
+
+        // 피해 이벤트가 누락되는 별도 피해 경로가 생겨도 보스의 실제 HP를 점수 원본으로 사용한다.
+        damageDealt = observedDamage;
+        damageScore = observedScore;
         RefreshTotalScore();
     }
 

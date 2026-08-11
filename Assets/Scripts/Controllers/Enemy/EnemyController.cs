@@ -150,6 +150,11 @@ public class EnemyController : MonoBehaviour
 
         enemyRigidbody = GetComponent<Rigidbody>();
 
+        // 높은 물리 콜라이더 대신 수평 차단기를 사용해 캐릭터가 위로 튀지 않게 한다.
+        EnemyBodyBlocker bodyBlocker = GetComponent<EnemyBodyBlocker>();
+        if (bodyBlocker == null)
+            bodyBlocker = gameObject.AddComponent<EnemyBodyBlocker>();
+
         if (attackHitBox != null)
         {
             attackBoxCollider = attackHitBox.GetComponent<BoxCollider>();
