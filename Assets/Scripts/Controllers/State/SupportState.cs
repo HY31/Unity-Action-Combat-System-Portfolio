@@ -110,19 +110,28 @@ public class SupportState : IPlayerState
         appliedRecoilDistance = 0f;
 
         FaceParryTarget();
-        if (parryTarget != null)
-        {
-            parryTarget.ApplyParryReaction();
+        bool parrySucceeded =
+            parryTarget != null &&
+            parryTarget.TryApplyParryReaction();
+
+        if (parrySucceeded)
             CombatOperationEvents.Report(CombatOperationType.DefensiveAssist, player);
-        }
+
         ResolveRecoilDirection();
 
         string impactAnimation = player.CharacterData.parrySupportHeavyAnim;
         if (!string.IsNullOrEmpty(impactAnimation))
             player.Animator.CrossFade(impactAnimation, 0.035f);
 
-        CombatPresentationEffects.PlayParry();
-        ThirdPersonCameraController.Active?.ResolveParryCamera();
+        if (parrySucceeded)
+        {
+            CombatPresentationEffects.PlayParry();
+            ThirdPersonCameraController.Active?.ResolveParryCamera();
+        }
+        else
+        {
+            ThirdPersonCameraController.Active?.EndParryCamera();
+        }
     }
 
     private void ResolveRecoilDirection()

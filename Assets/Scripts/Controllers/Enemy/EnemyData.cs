@@ -46,6 +46,8 @@ public class EnemyData : ScriptableObject
     public EnemyElementModifier[] elementModifiers;
 
     [Header("Attack Patterns")]
+    [Tooltip("사용 가능한 후보가 있다면 직전 공격과 다른 경고 유형을 우선 선택한다.")]
+    public bool preferDifferentWarningType = true;
     public EnemyAttackData[] attackPatterns;
 
     public EnemyElementModifier GetElementModifier(CombatElement element)

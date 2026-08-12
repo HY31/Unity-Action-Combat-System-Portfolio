@@ -310,8 +310,10 @@ public class EnemyController : MonoBehaviour
         }
 
         EnemyAttackData selectedAttack = null;
-        EnemyAttackData repeatFallback = null;
+        EnemyAttackData repeatedResponseFallback = null;
+        EnemyAttackData repeatedPatternFallback = null;
         float totalSelectionWeight = 0f;
+        float repeatedResponseWeight = 0f;
 
         foreach (EnemyAttackData attackPattern in enemyData.attackPatterns)
         {
@@ -331,19 +333,53 @@ public class EnemyController : MonoBehaviour
 
             if (attackPattern == lastAttack)
             {
-                repeatFallback = attackPattern;
+                repeatedPatternFallback = attackPattern;
                 continue;
             }
 
-            // 후보 배열 없이 누적 가중치만으로 각 패턴의 설정 비율에 맞춰 하나를 남긴다.
-            totalSelectionWeight += selectionWeight;
+            bool repeatsResponseType =
+                enemyData.preferDifferentWarningType &&
+                lastAttack != null &&
+                attackPattern.warningType == lastAttack.warningType;
 
-            if (Random.value <= selectionWeight / totalSelectionWeight)
-                selectedAttack = attackPattern;
+            if (repeatsResponseType)
+            {
+                ConsiderWeightedCandidate(
+                    attackPattern,
+                    selectionWeight,
+                    ref repeatedResponseFallback,
+                    ref repeatedResponseWeight);
+                continue;
+            }
+
+            ConsiderWeightedCandidate(
+                attackPattern,
+                selectionWeight,
+                ref selectedAttack,
+                ref totalSelectionWeight);
         }
 
+        if (selectedAttack != null)
+            return selectedAttack;
+
+        if (repeatedResponseFallback != null)
+            return repeatedResponseFallback;
+
         // 거리 조건을 만족하는 다른 패턴이 하나도 없을 때만 직전 공격을 다시 허용한다.
-        return selectedAttack != null ? selectedAttack : repeatFallback;
+        return repeatedPatternFallback;
+    }
+
+    private static void ConsiderWeightedCandidate(
+        EnemyAttackData candidate,
+        float candidateWeight,
+        ref EnemyAttackData selectedCandidate,
+        ref float accumulatedWeight)
+    {
+        // 별도 후보 배열을 만들지 않고 누적 가중치 비율로 하나를 남긴다.
+        accumulatedWeight += candidateWeight;
+
+        if (Random.value <= candidateWeight / accumulatedWeight)
+            selectedCandidate = candidate;
     }
 
     private bool IsAttackPatternReady(EnemyAttackData attackPattern)
@@ -822,14 +858,20 @@ public class EnemyController : MonoBehaviour
         phase = EnemyAttackPhase.None;
     }
 
-    public void ApplyParryReaction()
+    public bool TryApplyParryReaction()
     {
-        // 공격 판정, 경고 표시, 추적 이동을 먼저 모두 끊은 뒤 패링 전용 경직을 시작한다.
+        // 지원 상태가 잘못 호출되더라도 빨간색·일반 공격은 패링으로 끊을 수 없다.
+        if (isDefeated ||
+            isGroggy ||
+            enemyData == null ||
+            currentAttack == null ||
+            currentAttack.warningType != WarningType.Yellow)
+        {
+            return false;
+        }
+
+        // 노란색 공격의 패링이 성립하면 공격 판정과 이동을 즉시 끊고 확정 경직을 건다.
         InterruptAttack();
-
-        if (isGroggy || enemyData == null)
-            return;
-
         isInHitReaction = true;
         hitReactionTimeRemaining = Mathf.Max(
             0.01f,
@@ -841,6 +883,8 @@ public class EnemyController : MonoBehaviour
                 enemyData.parryReactionAnim,
                 Mathf.Clamp(enemyData.parryReactionBlendDuration, 0f, 0.25f));
         }
+
+        return true;
     }
     private void BeginHitReaction()
     {
