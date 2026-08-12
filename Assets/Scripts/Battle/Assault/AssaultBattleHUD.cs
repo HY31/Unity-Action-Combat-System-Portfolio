@@ -13,6 +13,12 @@ public sealed class AssaultBattleHUD : MonoBehaviour
     [SerializeField] private Text damageText;
     [SerializeField] private Image scoreFill;
 
+    [Header("Score Display")]
+    [Tooltip("실제 점수가 변했을 때 HUD 숫자가 목표 점수를 따라잡는 기준 시간이다.")]
+    [SerializeField, Min(0.01f)] private float scoreCountDuration = 0.18f;
+    [Tooltip("작은 점수 변화도 느려 보이지 않게 보장하는 초당 최소 증가량이다.")]
+    [SerializeField, Min(1f)] private float minimumScoreCountSpeed = 120f;
+
     [Header("Wipeout")]
     [SerializeField] private CanvasGroup wipeoutGroup;
     [SerializeField] private Image wipeoutTint;
@@ -41,6 +47,9 @@ public sealed class AssaultBattleHUD : MonoBehaviour
     private bool subscribed;
     private bool ownsBattlePause;
     private Coroutine finishSequence;
+    private float displayedScore;
+    private int targetScore;
+    private bool scoreDisplayInitialized;
 
     private bool HasView =>
         timerText != null ||
@@ -90,6 +99,7 @@ public sealed class AssaultBattleHUD : MonoBehaviour
         // 이벤트 연결 여부와 관계없이 화면은 현재 전투 원본 값을 최종적으로 따라간다.
         UpdateTimer(battleController.RemainingTime);
         UpdateScore(battleController.CurrentScore);
+        UpdateDisplayedScore();
     }
 
     private void OnDisable()
@@ -104,6 +114,7 @@ public sealed class AssaultBattleHUD : MonoBehaviour
         }
 
         RestoreBattleTime();
+        scoreDisplayInitialized = false;
     }
 
     public void Configure(AssaultBattleController controller)
@@ -238,7 +249,8 @@ public sealed class AssaultBattleHUD : MonoBehaviour
         SetGroupVisible(wipeoutGroup, false);
         SetGroupVisible(hudGroup, true);
         UpdateTimer(battleController.RemainingTime);
-        UpdateScore(battleController.CurrentScore);
+        SnapDisplayedScore(battleController.CurrentScore);
+        RefreshScoreBreakdown();
     }
 
     private void OnBattleFinished(AssaultBattleEndReason reason)
@@ -314,20 +326,66 @@ public sealed class AssaultBattleHUD : MonoBehaviour
 
     private void UpdateScore(int score)
     {
-        if (scoreText != null)
-            scoreText.text = $"{Mathf.Max(0, score):00000}";
+        targetScore = Mathf.Max(0, score);
 
+        if (!scoreDisplayInitialized)
+            SnapDisplayedScore(targetScore);
+
+        RefreshScoreBreakdown();
+    }
+
+    private void UpdateDisplayedScore()
+    {
+        if (!scoreDisplayInitialized)
+            return;
+
+        float difference = Mathf.Abs(targetScore - displayedScore);
+        if (difference <= 0.001f)
+        {
+            displayedScore = targetScore;
+            ApplyDisplayedScore(targetScore);
+            return;
+        }
+
+        // 히트 스톱 중에도 점수 숫자는 멈추지 않고 실제 누적 점수를 따라간다.
+        float duration = Mathf.Max(0.01f, scoreCountDuration);
+        float countSpeed = Mathf.Max(minimumScoreCountSpeed, difference / duration);
+        displayedScore = Mathf.MoveTowards(
+            displayedScore,
+            targetScore,
+            countSpeed * Time.unscaledDeltaTime);
+        ApplyDisplayedScore(Mathf.RoundToInt(displayedScore));
+    }
+
+    private void SnapDisplayedScore(int score)
+    {
+        targetScore = Mathf.Max(0, score);
+        displayedScore = targetScore;
+        scoreDisplayInitialized = true;
+        ApplyDisplayedScore(targetScore);
+    }
+
+    private void ApplyDisplayedScore(int score)
+    {
+        int safeScore = Mathf.Max(0, score);
+
+        if (scoreText != null)
+            scoreText.text = $"{safeScore:00000}";
+
+        if (scoreFill != null && battleController != null)
+        {
+            float maximumScore = Mathf.Max(1, battleController.MaximumTotalScore);
+            scoreFill.fillAmount = Mathf.Clamp01(safeScore / maximumScore);
+        }
+    }
+
+    private void RefreshScoreBreakdown()
+    {
         if (damageText != null && battleController != null)
         {
             damageText.text =
                 $"DMG {battleController.DamageScore:00000}  " +
                 $"OP {battleController.OperationScore:0000}";
-        }
-
-        if (scoreFill != null && battleController != null)
-        {
-            float maximumScore = Mathf.Max(1, battleController.MaximumTotalScore);
-            scoreFill.fillAmount = Mathf.Clamp01(score / maximumScore);
         }
     }
 
