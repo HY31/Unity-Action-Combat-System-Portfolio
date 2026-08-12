@@ -577,7 +577,7 @@ public class PlayerController : MonoBehaviour
         if (ChainSkillPromptUI.IsAnyOpen) return;
 
 
-        EnemyController dodgeEnemy = partyManager.FindReactionEnemy(this);
+        EnemyController dodgeEnemy = partyManager.FindPerfectDodgeEnemy(this);
 
         if (dodgeEnemy != null)
         {

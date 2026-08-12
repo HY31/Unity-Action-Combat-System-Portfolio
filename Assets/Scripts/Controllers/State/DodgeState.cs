@@ -56,7 +56,7 @@ public class DodgeState : IPlayerState
 
         if (dodgeType == DodgeType.Perfect)
         {
-            CombatPresentationEffects.PlayPerfectDodge();
+            CombatPresentationEffects.PlayPerfectDodge(player);
             CombatOperationEvents.Report(CombatOperationType.PerfectDodge, player);
         }
     }

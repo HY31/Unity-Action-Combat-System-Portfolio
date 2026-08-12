@@ -280,6 +280,18 @@ public class PartyManager : MonoBehaviour
 
     public EnemyController FindReactionEnemy(PlayerController sourcePlayer)
     {
+        return FindNearestReactionEnemy(sourcePlayer, false);
+    }
+
+    public EnemyController FindPerfectDodgeEnemy(PlayerController sourcePlayer)
+    {
+        return FindNearestReactionEnemy(sourcePlayer, true);
+    }
+
+    private EnemyController FindNearestReactionEnemy(
+        PlayerController sourcePlayer,
+        bool includePreHitReactionWindow)
+    {
         if (sourcePlayer == null)
             return null;
 
@@ -290,11 +302,15 @@ public class PartyManager : MonoBehaviour
         EnemyController nearestWarningEnemy = null;
         float nearestSqrDistance = float.MaxValue;
 
-        // 일반 공격용 10m 자동 조준 검색과 분리한다.
-        // 화면에 워닝 사인이 실제로 떠 있는 적이라면 거리와 카메라 방향에 관계없이 지원 대상이다.
+        // 지원 교체는 보이는 워닝을 사용하고, 직접 회피는 워닝 이후 피격 직전 구간까지 허용한다.
         foreach (EnemyController enemy in enemies)
         {
-            if (enemy == null || !enemy.IsAnyWarningVisible)
+            bool isReactionCandidate = enemy != null && (
+                includePreHitReactionWindow
+                    ? enemy.CanTriggerPerfectDodge
+                    : enemy.IsAnyWarningVisible);
+
+            if (!isReactionCandidate)
                 continue;
 
             float sqrDistance = (enemy.transform.position - sourcePlayer.transform.position).sqrMagnitude;

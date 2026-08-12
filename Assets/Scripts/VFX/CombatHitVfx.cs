@@ -10,6 +10,8 @@ public sealed class CombatHitVfx : MonoBehaviour
     private ParticleSystem flashParticles;
     private ParticleSystem ringParticles;
     private ParticleSystem sparkParticles;
+    private ParticleSystem dodgeAuraParticles;
+    private ParticleSystem dodgeOrbParticles;
 
     private Material flashMaterial;
     private Material ringMaterial;
@@ -21,6 +23,8 @@ public sealed class CombatHitVfx : MonoBehaviour
 
     private uint randomState = 0x6D2B79F5u;
     private bool initialized;
+    private Transform perfectDodgeTarget;
+    private float perfectDodgeFollowRemaining;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
     private static void ResetStaticState()
@@ -53,6 +57,25 @@ public sealed class CombatHitVfx : MonoBehaviour
         instance.EmitHit(position, travelDirection, element, feedbackScale);
     }
 
+    public static void PlayPerfectDodge(Transform target)
+    {
+        if (target == null)
+            return;
+
+        if (instance == null)
+        {
+            instance = FindFirstObjectByType<CombatHitVfx>();
+
+            if (instance == null)
+            {
+                GameObject runtimeRoot = new GameObject("Combat Hit VFX (Runtime)");
+                instance = runtimeRoot.AddComponent<CombatHitVfx>();
+            }
+        }
+
+        instance.EmitPerfectDodge(target);
+    }
+
     private void Awake()
     {
         if (instance != null && instance != this)
@@ -66,6 +89,20 @@ public sealed class CombatHitVfx : MonoBehaviour
         EnsureInitialized();
     }
 
+    private void Update()
+    {
+        if (perfectDodgeTarget == null)
+            return;
+
+        transform.position =
+            perfectDodgeTarget.position +
+            Vector3.up * 0.95f;
+
+        perfectDodgeFollowRemaining -= Time.unscaledDeltaTime;
+        if (perfectDodgeFollowRemaining <= 0f)
+            perfectDodgeTarget = null;
+    }
+
     private void OnDestroy()
     {
         if (instance == this)
@@ -77,6 +114,68 @@ public sealed class CombatHitVfx : MonoBehaviour
         DestroyRuntimeObject(flashTexture);
         DestroyRuntimeObject(ringTexture);
         DestroyRuntimeObject(sparkTexture);
+    }
+
+    private void EmitPerfectDodge(Transform target)
+    {
+        EnsureInitialized();
+
+        if (!initialized)
+            return;
+
+        perfectDodgeTarget = target;
+        perfectDodgeFollowRemaining = 0.55f;
+        transform.position = target.position + Vector3.up * 0.95f;
+
+        dodgeAuraParticles.Stop(
+            true,
+            ParticleSystemStopBehavior.StopEmittingAndClear);
+        dodgeOrbParticles.Stop(
+            true,
+            ParticleSystemStopBehavior.StopEmittingAndClear);
+
+        Color cyan = new Color(0.12f, 0.78f, 1f, 0.9f);
+        Color paleBlue = new Color(0.58f, 0.94f, 1f, 0.82f);
+
+        // 카메라를 향한 청록색 링이 캐릭터 외곽을 짧게 감싸는 강조선 역할을 한다.
+        EmitParticle(
+            dodgeAuraParticles,
+            Vector3.zero,
+            Vector3.zero,
+            cyan,
+            2.25f,
+            0.5f);
+        EmitParticle(
+            dodgeAuraParticles,
+            new Vector3(0f, 0.05f, 0f),
+            Vector3.zero,
+            paleBlue,
+            1.8f,
+            0.42f);
+
+        const int orbCount = 22;
+        for (int i = 0; i < orbCount; i++)
+        {
+            float angle = NextFloat() * Mathf.PI * 2f;
+            float radius = Mathf.Lerp(0.32f, 0.82f, NextFloat());
+            Vector3 localPosition = new Vector3(
+                Mathf.Cos(angle) * radius,
+                Mathf.Lerp(-0.72f, 0.82f, NextFloat()),
+                Mathf.Sin(angle) * radius);
+            Vector3 outward = new Vector3(
+                localPosition.x,
+                Mathf.Lerp(0.15f, 0.65f, NextFloat()),
+                localPosition.z).normalized;
+            Vector3 velocity = outward * Mathf.Lerp(0.35f, 1.25f, NextFloat());
+
+            EmitParticle(
+                dodgeOrbParticles,
+                localPosition,
+                velocity,
+                Color.Lerp(cyan, paleBlue, NextFloat()),
+                Mathf.Lerp(0.045f, 0.11f, NextFloat()),
+                Mathf.Lerp(0.3f, 0.62f, NextFloat()));
+        }
     }
 
     private void EmitHit(
@@ -147,6 +246,8 @@ public sealed class CombatHitVfx : MonoBehaviour
         flashParticles = CreateFlashParticles(flashMaterial);
         ringParticles = CreateRingParticles(ringMaterial);
         sparkParticles = CreateSparkParticles(sparkMaterial);
+        dodgeAuraParticles = CreateDodgeAuraParticles(ringMaterial);
+        dodgeOrbParticles = CreateDodgeOrbParticles(sparkMaterial);
         initialized = true;
     }
 
@@ -205,6 +306,53 @@ public sealed class CombatHitVfx : MonoBehaviour
         particleRenderer.renderMode = ParticleSystemRenderMode.Stretch;
         particleRenderer.velocityScale = 0.08f;
         particleRenderer.lengthScale = 2.4f;
+        return particles;
+    }
+
+    private ParticleSystem CreateDodgeAuraParticles(Material material)
+    {
+        ParticleSystem particles = CreateParticleSystem(
+            "Perfect Dodge Aura",
+            16,
+            material);
+        var main = particles.main;
+        main.simulationSpace = ParticleSystemSimulationSpace.Local;
+        main.useUnscaledTime = true;
+
+        var sizeOverLifetime = particles.sizeOverLifetime;
+        sizeOverLifetime.enabled = true;
+        sizeOverLifetime.size = new ParticleSystem.MinMaxCurve(
+            1f,
+            new AnimationCurve(
+                new Keyframe(0f, 0.9f),
+                new Keyframe(0.35f, 1f),
+                new Keyframe(1f, 1.08f)));
+
+        ConfigureFadeOut(particles, 0.45f);
+        return particles;
+    }
+
+    private ParticleSystem CreateDodgeOrbParticles(Material material)
+    {
+        ParticleSystem particles = CreateParticleSystem(
+            "Perfect Dodge Orbs",
+            128,
+            material);
+        var main = particles.main;
+        main.simulationSpace = ParticleSystemSimulationSpace.Local;
+        main.useUnscaledTime = true;
+        main.gravityModifier = -0.08f;
+
+        var sizeOverLifetime = particles.sizeOverLifetime;
+        sizeOverLifetime.enabled = true;
+        sizeOverLifetime.size = new ParticleSystem.MinMaxCurve(
+            1f,
+            new AnimationCurve(
+                new Keyframe(0f, 0.4f),
+                new Keyframe(0.18f, 1f),
+                new Keyframe(1f, 0f)));
+
+        ConfigureFadeOut(particles, 0.52f);
         return particles;
     }
 

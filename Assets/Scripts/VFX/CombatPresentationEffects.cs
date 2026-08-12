@@ -9,9 +9,12 @@ public sealed class CombatPresentationEffects : MonoBehaviour
 
     private CanvasGroup flashGroup;
     private Image flashImage;
+    private CanvasGroup perfectDodgeToneGroup;
+    private Image perfectDodgeToneImage;
     private CanvasGroup letterboxGroup;
 
     private Tween flashTween;
+    private Tween perfectDodgeToneTween;
     private Tween letterboxTween;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
@@ -31,10 +34,18 @@ public sealed class CombatPresentationEffects : MonoBehaviour
         float alpha = Mathf.Lerp(0.012f, 0.025f, normalizedIntensity);
         Flash(ResolveElementColor(element), alpha, 0.12f);
     }
-    public static void PlayPerfectDodge()
+    public static void PlayPerfectDodge(PlayerController player)
     {
-        HitStop.DoSlowMotion(0.16f, 0.055f, 0.22f);
-        Flash(new Color(0.15f, 0.9f, 1f), 0.08f, 0.2f);
+        HitStop.DoSlowMotion(0.22f, 0.08f, 0.3f);
+
+        CombatPresentationEffects effects = Resolve();
+        effects?.PlayPerfectDodgeTone();
+
+        Flash(new Color(0.15f, 0.9f, 1f), 0.075f, 0.2f);
+
+        if (player != null)
+            CombatHitVfx.PlayPerfectDodge(player.transform);
+
         ThirdPersonCameraController.Active?.PunchFieldOfView(4f, 0.25f);
     }
 
@@ -140,6 +151,7 @@ public sealed class CombatPresentationEffects : MonoBehaviour
     private void OnDestroy()
     {
         flashTween?.Kill();
+        perfectDodgeToneTween?.Kill();
         letterboxTween?.Kill();
 
         if (instance == this)
@@ -158,6 +170,15 @@ public sealed class CombatPresentationEffects : MonoBehaviour
         scaler.matchWidthOrHeight = 0.5f;
 
         gameObject.AddComponent<GraphicRaycaster>().enabled = false;
+
+        perfectDodgeToneImage = CreateImage(
+            "Perfect Dodge Tone",
+            transform,
+            new Color(0.32f, 0.36f, 0.4f, 1f));
+        StretchFullScreen(perfectDodgeToneImage.rectTransform);
+        perfectDodgeToneGroup =
+            perfectDodgeToneImage.gameObject.AddComponent<CanvasGroup>();
+        perfectDodgeToneGroup.alpha = 0f;
 
         flashImage = CreateImage("Impact Flash", transform, Color.white);
         StretchFullScreen(flashImage.rectTransform);
@@ -199,6 +220,27 @@ public sealed class CombatPresentationEffects : MonoBehaviour
         flashTween = DOTween.Sequence()
             .Append(flashGroup.DOFade(peakAlpha, attackDuration).SetEase(Ease.OutQuad))
             .Append(flashGroup.DOFade(0f, duration - attackDuration).SetEase(Ease.OutCubic))
+            .SetUpdate(true);
+    }
+
+    private void PlayPerfectDodgeTone()
+    {
+        if (perfectDodgeToneGroup == null || perfectDodgeToneImage == null)
+            return;
+
+        perfectDodgeToneTween?.Kill(false);
+        perfectDodgeToneImage.color = new Color(0.32f, 0.36f, 0.4f, 1f);
+        perfectDodgeToneGroup.alpha = 0f;
+
+        // 회색빛을 짧게 유지해 파란 캐릭터 강조가 화면에서 분리되어 보이게 한다.
+        perfectDodgeToneTween = DOTween.Sequence()
+            .Append(perfectDodgeToneGroup
+                .DOFade(0.18f, 0.045f)
+                .SetEase(Ease.OutQuad))
+            .AppendInterval(0.08f)
+            .Append(perfectDodgeToneGroup
+                .DOFade(0f, 0.32f)
+                .SetEase(Ease.OutCubic))
             .SetUpdate(true);
     }
 

@@ -22,6 +22,8 @@ public class EnemyData : ScriptableObject
     [Header("Hit Reaction")]
     // 강공격이 짧은 시간 안에 누적될 때만 경직되도록 감소형 숨은 게이지를 설정한다.
     [Min(0f)] public float maxHitReactionGauge = 100f;
+    [Tooltip("강공격에 별도 경직치가 없더라도 최소한 누적하는 값이다.")]
+    [Min(0f)] public float minimumHeavyHitReactionBuildUp = 25f;
     [Min(0f)] public float hitReactionThreshold = 80f;
     [Min(0f)] public float hitReactionResetValue = 50f;
     [Min(0f)] public float hitReactionDecayPerSecond = 45f;

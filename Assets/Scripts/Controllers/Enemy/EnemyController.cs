@@ -27,6 +27,7 @@ public class EnemyController : MonoBehaviour
     [SerializeField] private bool isInHitReaction;
     private float hitReactionTimeRemaining;
     private bool groggyLoopStarted;
+    private bool chainSkillRequestedThisGroggy;
 
     [Header("Attributes")]
     [SerializeField] private CombatElement currentAnomalyElement = CombatElement.None;
@@ -131,6 +132,10 @@ public class EnemyController : MonoBehaviour
 
     public bool IsParryWarningVisible => VisibleWarningType == WarningType.Yellow;
     public bool IsAnyWarningVisible => VisibleWarningType != WarningType.None;
+    public bool CanTriggerPerfectDodge =>
+        currentAttack != null &&
+        currentAttack.warningType != WarningType.None &&
+        (IsAnyWarningVisible || IsInReactionWindow);
 
     EnemyAttackPhase phase;
 
@@ -174,6 +179,7 @@ public class EnemyController : MonoBehaviour
         currentHitReactionGauge = 0f;
         isGroggy = false;
         groggyTimeRemaining = 0f;
+        chainSkillRequestedThisGroggy = false;
         currentAnomalyGauge = 0f;
 
         // UI에는 최근 속성 하나만 보여도 실제 축적량은 속성별로 독립 보존한다.
@@ -932,14 +938,16 @@ public class EnemyController : MonoBehaviour
             hitData.damageMultiplier,
             modifier);
 
+        bool isHeavyAttack = hitData.canTriggerChainSkill;
         bool emphasizeDamage =
-            hitData.canTriggerChainSkill ||
+            isHeavyAttack ||
             hitData.damageMultiplier >= 1.5f ||
             hitData.impactMultiplier >= 1.25f;
         if (ApplyDamage(
                 finalDamage,
                 hitData.resolvedElement,
-                emphasizeDamage))
+                emphasizeDamage,
+                isHeavyAttack))
             return;
 
         float stunDamage = 0f;
@@ -951,11 +959,19 @@ public class EnemyController : MonoBehaviour
             currentStun = Mathf.Clamp(currentStun + stunDamage, 0f, enemyData.maxStun);
         }
 
-        // 일반 공격은 0을 전달하므로 강공격에 설정된 누적치만 게이지에 반영된다.
-        AddHitReactionBuildUp(hitData.hitReactionBuildUp);
+        // 강공격은 개별 에셋 값이 비어 있어도 적 데이터의 최소 경직치를 보장한다.
+        float hitReactionBuildUp = isHeavyAttack
+            ? Mathf.Max(
+                hitData.hitReactionBuildUp,
+                enemyData.minimumHeavyHitReactionBuildUp)
+            : hitData.hitReactionBuildUp;
+        AddHitReactionBuildUp(hitReactionBuildUp);
 
         if (!isGroggy && enemyData.maxStun > 0f && currentStun >= enemyData.maxStun)
-            EnterGroggy(hitData.attacker, hitData.canTriggerChainSkill);
+            EnterGroggy();
+
+        if (isGroggy && isHeavyAttack)
+            TryRequestChainSkill(hitData.attacker);
 
         if (hitData.resolvedElement != CombatElement.None)
         {
@@ -1037,12 +1053,16 @@ public class EnemyController : MonoBehaviour
     private bool ApplyDamage(
         float damage,
         CombatElement element,
-        bool emphasizeDamage)
+        bool emphasizeDamage,
+        bool canDefeat)
     {
         float hpBeforeDamage = currentHp;
+        float minimumHp = canDefeat
+            ? 0f
+            : Mathf.Min(1f, enemyData.maxHp);
         currentHp = Mathf.Clamp(
             currentHp - Mathf.Max(0f, damage),
-            0f,
+            minimumHp,
             enemyData.maxHp);
         float appliedDamage = hpBeforeDamage - currentHp;
 
@@ -1078,7 +1098,7 @@ public class EnemyController : MonoBehaviour
             attacker,
             enemyData.anomalyBurstDamageMultiplier,
             modifier);
-        if (ApplyDamage(burstDamage, element, true))
+        if (ApplyDamage(burstDamage, element, true, false))
             return;
 
         if (modifier.isWeakness)
@@ -1127,13 +1147,14 @@ public class EnemyController : MonoBehaviour
         }
     }
 
-    private void EnterGroggy(PlayerController attacker, bool requestChainSkill)
+    private void EnterGroggy()
     {
         isGroggy = true;
         isInHitReaction = false;
         hitReactionTimeRemaining = 0f;
         currentHitReactionGauge = 0f;
         groggyLoopStarted = false;
+        chainSkillRequestedThisGroggy = false;
         currentStun = enemyData.maxStun;
         groggyTimeRemaining = Mathf.Max(0.01f, enemyData.groggyDuration);
 
@@ -1148,8 +1169,16 @@ public class EnemyController : MonoBehaviour
         if (animator != null && !string.IsNullOrEmpty(enemyData.groggyStartAnim))
             animator.CrossFade(enemyData.groggyStartAnim, 0.05f);
 
-        if (requestChainSkill)
-            ChainSkillRequested?.Invoke(this, attacker);
+    }
+
+    private void TryRequestChainSkill(PlayerController attacker)
+    {
+        if (!isGroggy || chainSkillRequestedThisGroggy || attacker == null)
+            return;
+
+        // 한 번의 그로기에서는 최초 강공격만 콤보 스킬 선택창을 연다.
+        chainSkillRequestedThisGroggy = true;
+        ChainSkillRequested?.Invoke(this, attacker);
     }
 
     private void UpdateGroggy()
@@ -1176,6 +1205,7 @@ public class EnemyController : MonoBehaviour
         currentStun = 0f;
         isGroggy = false;
         groggyLoopStarted = false;
+        chainSkillRequestedThisGroggy = false;
 
         if (animator != null && !string.IsNullOrEmpty(enemyData.groggyEndAnim))
             animator.CrossFade(enemyData.groggyEndAnim, 0.08f);
