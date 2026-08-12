@@ -27,7 +27,7 @@ public class HitState : IPlayerState, IUltimateBlockingState
     }
     public void Update()
     {
-        timer -= Time.deltaTime;
+        timer -= player.ActionDeltaTime;
 
         if (timer <= 0f)
         {

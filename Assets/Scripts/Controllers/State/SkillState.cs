@@ -376,7 +376,7 @@ public class SkillState : IPlayerState
     {
         if (bufferedAttackInput)
         {
-            bufferedAttackTimer -= Time.deltaTime;
+            bufferedAttackTimer -= player.ActionDeltaTime;
 
             if (bufferedAttackTimer <= 0f)
             {
@@ -387,7 +387,7 @@ public class SkillState : IPlayerState
 
         if (bufferedSkillInput)
         {
-            bufferedSkillTimer -= Time.deltaTime;
+            bufferedSkillTimer -= player.ActionDeltaTime;
 
             if (bufferedSkillTimer <= 0f)
             {
@@ -548,7 +548,7 @@ public class SkillState : IPlayerState
         else if (currentTime >= currentSkill.moveStart && currentTime <= currentSkill.moveEnd)
         {
             float moveDistance = ClampMoveDistanceToTarget(
-                currentSkill.forwardMoveSpeed * Time.deltaTime,
+                currentSkill.forwardMoveSpeed * player.ActionDeltaTime,
                 moveDirection);
 
             player.Controller.Move(

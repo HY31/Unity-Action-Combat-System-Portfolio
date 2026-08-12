@@ -184,6 +184,9 @@ public class PartyManager : MonoBehaviour
         if (chainPlayer == null || chainPlayer.UltimateState == null)
             return false;
 
+        if (!enemy.TryStartChainSkill())
+            return false;
+
         chainPlayer.UltimateState.PrepareChainSkill(enemy.transform);
         chainPlayer.ChangeState(chainPlayer.UltimateState);
         CombatOperationEvents.Report(CombatOperationType.ChainSkill, chainPlayer);

@@ -83,8 +83,8 @@ public class UltimateState : IPlayerState
             hitReactionBuildUp = ultData.hitPayload.hitReactionBuildUp,
             resolvedElement = resolvedElement,
             anomalyBuildUp = ultData.hitPayload.anomalyBuildUp,
-            canTriggerChainSkill = ultData.hitPayload.canTriggerChainSkill
-
+            canTriggerChainSkill = ultData.hitPayload.canTriggerChainSkill,
+            isChainSkill = isChainSkillEntry
         };
 
         hitBox.SetRewardType(DecibelRewardType.None);
@@ -173,7 +173,7 @@ public class UltimateState : IPlayerState
                 moveDirection = player.transform.forward;
 
             float moveDistance = ClampMoveDistanceToTarget(
-                ultData.forwardMoveSpeed * Time.deltaTime,
+                ultData.forwardMoveSpeed * player.ActionDeltaTime,
                 moveDirection);
             player.Controller.Move(moveDirection * moveDistance);
         }

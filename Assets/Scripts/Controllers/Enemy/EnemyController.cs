@@ -4,6 +4,8 @@ using DG.Tweening;
 
 public class EnemyController : MonoBehaviour
 {
+    public const int MaxChainSkillsPerGroggy = 3;
+
     private enum EnemyAttackPhase
     {
         None,
@@ -27,7 +29,9 @@ public class EnemyController : MonoBehaviour
     [SerializeField] private bool isInHitReaction;
     private float hitReactionTimeRemaining;
     private bool groggyLoopStarted;
-    private bool chainSkillRequestedThisGroggy;
+    private int chainSkillsStartedThisGroggy;
+    private bool chainSkillPromptPending;
+    private bool chainSkillSequenceComplete;
 
     [Header("Attributes")]
     [SerializeField] private CombatElement currentAnomalyElement = CombatElement.None;
@@ -44,6 +48,9 @@ public class EnemyController : MonoBehaviour
     public bool IsInHitReaction => isInHitReaction;
     public bool IsGroggy => isGroggy;
     public bool IsDefeated => isDefeated;
+    public int ChainSkillsStartedThisGroggy => chainSkillsStartedThisGroggy;
+    public bool IsChainSkillSequenceComplete =>
+        isGroggy && chainSkillSequenceComplete;
     public float CurrentAttackRecoveryDelay =>
         currentAttack != null
         ? Mathf.Max(0f, currentAttack.additionalRecoveryDelay)
@@ -179,7 +186,9 @@ public class EnemyController : MonoBehaviour
         currentHitReactionGauge = 0f;
         isGroggy = false;
         groggyTimeRemaining = 0f;
-        chainSkillRequestedThisGroggy = false;
+        chainSkillsStartedThisGroggy = 0;
+        chainSkillPromptPending = false;
+        chainSkillSequenceComplete = false;
         currentAnomalyGauge = 0f;
 
         // UI에는 최근 속성 하나만 보여도 실제 축적량은 속성별로 독립 보존한다.
@@ -971,7 +980,17 @@ public class EnemyController : MonoBehaviour
             EnterGroggy();
 
         if (isGroggy && isHeavyAttack)
-            TryRequestChainSkill(hitData.attacker);
+        {
+            if (hitData.isChainSkill &&
+                chainSkillsStartedThisGroggy >= MaxChainSkillsPerGroggy)
+            {
+                // 세 번째 콤보의 첫 적중부터 무지개 강조를 끝내고 회색 소진 단계로 전환한다.
+                chainSkillSequenceComplete = true;
+            }
+
+            if (!chainSkillSequenceComplete)
+                TryRequestChainSkill(hitData.attacker);
+        }
 
         if (hitData.resolvedElement != CombatElement.None)
         {
@@ -1154,7 +1173,9 @@ public class EnemyController : MonoBehaviour
         hitReactionTimeRemaining = 0f;
         currentHitReactionGauge = 0f;
         groggyLoopStarted = false;
-        chainSkillRequestedThisGroggy = false;
+        chainSkillsStartedThisGroggy = 0;
+        chainSkillPromptPending = false;
+        chainSkillSequenceComplete = false;
         currentStun = enemyData.maxStun;
         groggyTimeRemaining = Mathf.Max(0.01f, enemyData.groggyDuration);
 
@@ -1173,12 +1194,42 @@ public class EnemyController : MonoBehaviour
 
     private void TryRequestChainSkill(PlayerController attacker)
     {
-        if (!isGroggy || chainSkillRequestedThisGroggy || attacker == null)
+        if (!isGroggy ||
+            chainSkillPromptPending ||
+            chainSkillSequenceComplete ||
+            chainSkillsStartedThisGroggy >= MaxChainSkillsPerGroggy ||
+            attacker == null ||
+            ChainSkillRequested == null)
+        {
+            return;
+        }
+
+        chainSkillPromptPending = true;
+        ChainSkillRequested.Invoke(this, attacker);
+    }
+
+    public bool TryStartChainSkill()
+    {
+        if (!isGroggy ||
+            !chainSkillPromptPending ||
+            chainSkillSequenceComplete ||
+            chainSkillsStartedThisGroggy >= MaxChainSkillsPerGroggy)
+        {
+            return false;
+        }
+
+        chainSkillPromptPending = false;
+        chainSkillsStartedThisGroggy++;
+        return true;
+    }
+
+    public void CancelChainSkillSequence()
+    {
+        if (!isGroggy)
             return;
 
-        // 한 번의 그로기에서는 최초 강공격만 콤보 스킬 선택창을 연다.
-        chainSkillRequestedThisGroggy = true;
-        ChainSkillRequested?.Invoke(this, attacker);
+        chainSkillPromptPending = false;
+        chainSkillSequenceComplete = true;
     }
 
     private void UpdateGroggy()
@@ -1205,7 +1256,9 @@ public class EnemyController : MonoBehaviour
         currentStun = 0f;
         isGroggy = false;
         groggyLoopStarted = false;
-        chainSkillRequestedThisGroggy = false;
+        chainSkillsStartedThisGroggy = 0;
+        chainSkillPromptPending = false;
+        chainSkillSequenceComplete = false;
 
         if (animator != null && !string.IsNullOrEmpty(enemyData.groggyEndAnim))
             animator.CrossFade(enemyData.groggyEndAnim, 0.08f);

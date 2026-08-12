@@ -36,6 +36,7 @@ public sealed class EnemyWorldStatusUI : MonoBehaviour
         new Color32(255, 220, 35, 255),
         new Color32(255, 55, 42, 255)
     };
+    [SerializeField] private Color exhaustedGroggyColor = new Color32(112, 118, 126, 255);
     [SerializeField, Min(1f)] private float groggyFlashRate = 12f;
 
     public EnemyController TargetEnemy => targetEnemy;
@@ -89,7 +90,7 @@ public sealed class EnemyWorldStatusUI : MonoBehaviour
         // 전투 계산은 EnemyController가 담당하고 UI는 정규화된 결과만 표시한다.
         hpFill.fillAmount = targetEnemy.CurrentHpNormalized;
         stunFill.fillAmount = targetEnemy.CurrentStunNormalized;
-        Color stunColor = targetEnemy.IsGroggy ? GetGroggyFlashColor() : normalStunColor;
+        Color stunColor = ResolveStunColor();
         stunFill.color = stunColor;
 
         if (stunPercentText != null)
@@ -212,6 +213,16 @@ public sealed class EnemyWorldStatusUI : MonoBehaviour
             default:
                 return Color.white;
         }
+    }
+
+    private Color ResolveStunColor()
+    {
+        if (!targetEnemy.IsGroggy)
+            return normalStunColor;
+
+        return targetEnemy.IsChainSkillSequenceComplete
+            ? exhaustedGroggyColor
+            : GetGroggyFlashColor();
     }
 
     private Color GetGroggyFlashColor()

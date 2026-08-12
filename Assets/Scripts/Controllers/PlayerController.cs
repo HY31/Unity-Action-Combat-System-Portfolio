@@ -14,6 +14,12 @@ public class PlayerController : MonoBehaviour
 
     public bool IsInvincible { get; private set; }
 
+    private bool usesUnscaledActionTime;
+    private float unscaledActionTimeRemaining;
+    private AnimatorUpdateMode previousAnimatorUpdateMode;
+    public float ActionDeltaTime =>
+        usesUnscaledActionTime ? Time.unscaledDeltaTime : Time.deltaTime;
+
     [Header("Party")]
     [SerializeField] private PartyManager partyManager;
     public PartyManager PartyManager => partyManager;
@@ -184,6 +190,8 @@ public class PlayerController : MonoBehaviour
 
     private void Update()
     {
+        UpdateUnscaledActionTime();
+
         if (ChainSkillPromptUI.IsAnyOpen)
             MoveInput = Vector2.zero;
 
@@ -194,6 +202,51 @@ public class PlayerController : MonoBehaviour
 
         if (supportPointText_temp != null && supportPointManager != null)
             supportPointText_temp.text = supportPointManager.CurrentSupportPoint.ToString("F0");
+    }
+
+    private void OnDisable()
+    {
+        EndUnscaledActionTime();
+    }
+
+    public void BeginUnscaledActionTime(float duration)
+    {
+        duration = Mathf.Max(0f, duration);
+        if (duration <= 0f)
+            return;
+
+        if (!usesUnscaledActionTime && Animator != null)
+            previousAnimatorUpdateMode = Animator.updateMode;
+
+        usesUnscaledActionTime = true;
+        unscaledActionTimeRemaining = Mathf.Max(
+            unscaledActionTimeRemaining,
+            duration);
+
+        if (Animator != null)
+            Animator.updateMode = AnimatorUpdateMode.UnscaledTime;
+    }
+
+    private void UpdateUnscaledActionTime()
+    {
+        if (!usesUnscaledActionTime)
+            return;
+
+        unscaledActionTimeRemaining -= Time.unscaledDeltaTime;
+        if (unscaledActionTimeRemaining <= 0f)
+            EndUnscaledActionTime();
+    }
+
+    private void EndUnscaledActionTime()
+    {
+        if (!usesUnscaledActionTime)
+            return;
+
+        usesUnscaledActionTime = false;
+        unscaledActionTimeRemaining = 0f;
+
+        if (Animator != null)
+            Animator.updateMode = previousAnimatorUpdateMode;
     }
 
     public void ChangeState(IPlayerState newState)
@@ -315,7 +368,7 @@ public class PlayerController : MonoBehaviour
         }
         else
         {
-            yVelocity += gravity * Time.deltaTime;
+            yVelocity += gravity * ActionDeltaTime;
         }
     }
 
@@ -327,7 +380,7 @@ public class PlayerController : MonoBehaviour
         CurrentSpeed = Mathf.MoveTowards(
             CurrentSpeed,
             targetSpeed,
-            speedChangeRate * Time.deltaTime
+            speedChangeRate * ActionDeltaTime
         );
     }
 
@@ -364,7 +417,7 @@ public class PlayerController : MonoBehaviour
         transform.rotation = Quaternion.Slerp(
             transform.rotation,
             targetRotation,
-            turnSpeed * Time.deltaTime
+            turnSpeed * ActionDeltaTime
         );
     }
 
@@ -476,7 +529,7 @@ public class PlayerController : MonoBehaviour
 
     public void RecoveryEnergyOverTime(float recoveryPerSecond)
     {
-        SetEnergy(currentEnergy + recoveryPerSecond * Time.deltaTime);
+        SetEnergy(currentEnergy + recoveryPerSecond * ActionDeltaTime);
     }
 
     public bool TryUseEnergy(float cost)

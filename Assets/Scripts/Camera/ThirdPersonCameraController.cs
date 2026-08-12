@@ -9,7 +9,10 @@ public class ThirdPersonCameraController : MonoBehaviour
     [SerializeField] private Transform yawPivot;
     [SerializeField] private Transform pitchPivot;
     [SerializeField] private Camera cam;
+    private PlayerController targetPlayer;
     public Transform YawPivot => yawPivot;
+    private float CameraDeltaTime =>
+        targetPlayer != null ? targetPlayer.ActionDeltaTime : Time.deltaTime;
 
     [Header("Follow")]
     [SerializeField] private float horizontalFollowSmooth = 20f;
@@ -74,6 +77,9 @@ public class ThirdPersonCameraController : MonoBehaviour
     private void Awake()
     {
         Active = this;
+        targetPlayer = target != null
+            ? target.GetComponentInParent<PlayerController>()
+            : null;
         targetDistance = defaultDistance;
         currentDistance = defaultDistance;
         baseFieldOfView = cam != null ? cam.fieldOfView : 60f;
@@ -129,8 +135,8 @@ public class ThirdPersonCameraController : MonoBehaviour
         float mouseX = Input.GetAxis("Mouse X");
         float mouseY = Input.GetAxis("Mouse Y");
 
-        yaw += mouseX * mouseSensitivity * Time.deltaTime;
-        pitch -= mouseY * mouseSensitivity * Time.deltaTime;
+        yaw += mouseX * mouseSensitivity * CameraDeltaTime;
+        pitch -= mouseY * mouseSensitivity * CameraDeltaTime;
         pitch = Mathf.Clamp(pitch, minPitch, maxPitch);
     }
 
@@ -150,9 +156,9 @@ public class ThirdPersonCameraController : MonoBehaviour
         Vector3 current = transform.position;
         Vector3 targetPos = target.position;
 
-        float x = Mathf.Lerp(current.x, targetPos.x, horizontalFollowSmooth * Time.deltaTime);
-        float z = Mathf.Lerp(current.z, targetPos.z, horizontalFollowSmooth * Time.deltaTime);
-        float y = Mathf.Lerp(current.y, targetPos.y, verticalFollowSmooth * Time.deltaTime);
+        float x = Mathf.Lerp(current.x, targetPos.x, horizontalFollowSmooth * CameraDeltaTime);
+        float z = Mathf.Lerp(current.z, targetPos.z, horizontalFollowSmooth * CameraDeltaTime);
+        float y = Mathf.Lerp(current.y, targetPos.y, verticalFollowSmooth * CameraDeltaTime);
 
         transform.position = new Vector3(x, y, z);
     }
@@ -162,6 +168,7 @@ public class ThirdPersonCameraController : MonoBehaviour
         if (newTarget == null) return;
 
         target = newTarget;
+        targetPlayer = target.GetComponentInParent<PlayerController>();
     }
 
     private void ApplyRotation()

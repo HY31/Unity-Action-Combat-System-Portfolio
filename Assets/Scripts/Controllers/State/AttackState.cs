@@ -423,7 +423,7 @@ public class AttackState : IPlayerState
         else if (currentTime >= currentAttack.moveStart && currentTime <= currentAttack.moveEnd)
         {
             float moveDistance = ClampMoveDistanceToTarget(
-                currentAttack.forwardMoveSpeed * Time.deltaTime,
+                currentAttack.forwardMoveSpeed * player.ActionDeltaTime,
                 moveDirection);
 
             player.Controller.Move(

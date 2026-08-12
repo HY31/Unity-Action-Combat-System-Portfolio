@@ -49,7 +49,7 @@ public class LocomotionState : IPlayerState
         if (hasInput)
         {
             // 속도가 아니라 입력 유지 시간으로 Walk에서 Run으로 넘어가 원작의 출발 템포를 만든다.
-            moveHoldTimer += Time.deltaTime;
+            moveHoldTimer += player.ActionDeltaTime;
 
             if (inputMoveDir.sqrMagnitude > 0.0001f)
             {
@@ -92,13 +92,13 @@ public class LocomotionState : IPlayerState
         player.HandleGravity();
         move.y = player.YVelocity;
 
-        player.Controller.Move(move * Time.deltaTime);
+        player.Controller.Move(move * player.ActionDeltaTime);
 
         player.Animator.SetFloat(
             LOCOMOTION_PHASE_PARAM,
             (float)currentMode,
             0.08f,
-            Time.deltaTime
+            player.ActionDeltaTime
         );
     }
 

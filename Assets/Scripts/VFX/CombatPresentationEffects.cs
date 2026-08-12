@@ -36,7 +36,8 @@ public sealed class CombatPresentationEffects : MonoBehaviour
     }
     public static void PlayPerfectDodge(PlayerController player)
     {
-        HitStop.DoSlowMotion(0.22f, 0.08f, 0.3f);
+        // 플레이어는 unscaled action time으로 움직이고 주변 전투만 약 0.6초간 느려진다.
+        HitStop.DoSlowMotion(0.16f, 0.12f, 0.48f);
 
         CombatPresentationEffects effects = Resolve();
         effects?.PlayPerfectDodgeTone();
@@ -235,11 +236,11 @@ public sealed class CombatPresentationEffects : MonoBehaviour
         // 회색빛을 짧게 유지해 파란 캐릭터 강조가 화면에서 분리되어 보이게 한다.
         perfectDodgeToneTween = DOTween.Sequence()
             .Append(perfectDodgeToneGroup
-                .DOFade(0.18f, 0.045f)
+                .DOFade(0.24f, 0.045f)
                 .SetEase(Ease.OutQuad))
-            .AppendInterval(0.08f)
+            .AppendInterval(0.14f)
             .Append(perfectDodgeToneGroup
-                .DOFade(0f, 0.32f)
+                .DOFade(0f, 0.42f)
                 .SetEase(Ease.OutCubic))
             .SetUpdate(true);
     }

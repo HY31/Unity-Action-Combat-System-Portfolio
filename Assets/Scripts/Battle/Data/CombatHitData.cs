@@ -44,4 +44,6 @@ public struct CombatHitData
     public CombatElement resolvedElement;
     public float anomalyBuildUp;
     public bool canTriggerChainSkill;
+    // 일반 강공격과 콤보 스킬 타격을 구분해 연쇄 횟수를 다단 히트와 독립적으로 센다.
+    public bool isChainSkill;
 }

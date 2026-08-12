@@ -212,7 +212,12 @@ public sealed class UIManager : MonoBehaviour
 
     private void HandleChainSkillSelected(int side, EnemyController enemy)
     {
-        boundPartyManager?.TryExecuteChainSkill(side, enemy);
+        bool executed =
+            boundPartyManager != null &&
+            boundPartyManager.TryExecuteChainSkill(side, enemy);
+
+        if (!executed)
+            enemy?.CancelChainSkillSequence();
     }
 
     private static bool AreSameMembers(PlayerController[] left, PlayerController[] right)

@@ -34,6 +34,7 @@ public sealed class ChainSkillPromptUI : MonoBehaviour
     private bool isOpen;
     private Tween visibilityTween;
     private EnemyController requestedEnemy;
+    private int inputReadyFrame;
     private static int openPromptCount;
 
     public bool IsOpen => isOpen;
@@ -67,6 +68,10 @@ public sealed class ChainSkillPromptUI : MonoBehaviour
         remaining = Mathf.Max(0f, remaining - Time.unscaledDeltaTime);
         RefreshTime();
 
+        // UI를 연 강공격의 클릭이 같은 프레임에 선택 입력으로 다시 소비되는 것을 막는다.
+        if (Time.frameCount < inputReadyFrame)
+            return;
+
         bool leftMousePressed = Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame;
         bool rightMousePressed = Mouse.current != null && Mouse.current.rightButton.wasPressedThisFrame;
 
@@ -82,6 +87,7 @@ public sealed class ChainSkillPromptUI : MonoBehaviour
     {
         duration = Mathf.Max(0.1f, seconds);
         remaining = duration;
+        inputReadyFrame = Time.frameCount + 1;
         if (!isOpen)
             openPromptCount++;
 
@@ -117,6 +123,8 @@ public sealed class ChainSkillPromptUI : MonoBehaviour
         if (!isOpen)
             return;
 
+        EnemyController enemy = requestedEnemy;
+        enemy?.CancelChainSkillSequence();
         onCancelled?.Invoke();
         HideAnimated();
     }

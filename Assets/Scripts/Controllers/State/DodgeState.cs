@@ -12,6 +12,7 @@ public class DodgeState : IPlayerState
     private CharacterData characterData;
     private const float NormalDodgeDuration = 0.3f;
     private const float PerfectDodgeDuration = 0.45f;
+    private const float PerfectDodgeBulletTimeDuration = 0.62f;
 
     private float timer;
     private Vector3 dodgeDirection;
@@ -56,6 +57,8 @@ public class DodgeState : IPlayerState
 
         if (dodgeType == DodgeType.Perfect)
         {
+            // 플레이어의 상태 시간과 애니메이션만 실시간으로 두어 주변과 속도 차이를 만든다.
+            player.BeginUnscaledActionTime(PerfectDodgeBulletTimeDuration);
             CombatPresentationEffects.PlayPerfectDodge(player);
             CombatOperationEvents.Report(CombatOperationType.PerfectDodge, player);
         }
@@ -63,7 +66,7 @@ public class DodgeState : IPlayerState
 
     public void Update()
     {
-        float deltaTime = Time.deltaTime;
+        float deltaTime = player.ActionDeltaTime;
 
         timer -= deltaTime;
         elapsedTime += deltaTime;
@@ -161,7 +164,7 @@ public class DodgeState : IPlayerState
     {
         if (bufferedAttackInput)
         {
-            bufferedAttackTimer -= Time.deltaTime;
+            bufferedAttackTimer -= player.ActionDeltaTime;
 
             if (bufferedAttackTimer <= 0f)
             {
@@ -172,7 +175,7 @@ public class DodgeState : IPlayerState
 
         if (bufferedSkillInput)
         {
-            bufferedSkillTimer -= Time.deltaTime;
+            bufferedSkillTimer -= player.ActionDeltaTime;
 
             if (bufferedSkillTimer <= 0f)
             {
