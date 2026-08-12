@@ -256,6 +256,10 @@ public sealed class AssaultBattleHUD : MonoBehaviour
         SetGroupVisible(resultGroup, false);
         UpdateResult(reason);
 
+        bool partyDefeated = reason == AssaultBattleEndReason.PartyDefeated;
+        if (wipeoutText != null)
+            wipeoutText.text = partyDefeated ? "MISSION FAILED" : "WIPEOUT";
+
         if (wipeoutGroup != null)
         {
             SetGroupVisible(wipeoutGroup, true);
@@ -264,6 +268,8 @@ public sealed class AssaultBattleHUD : MonoBehaviour
             Color baseTint = wipeoutTint != null
                 ? wipeoutTint.color
                 : new Color(1f, 0.72f, 0.05f, 0.82f);
+            if (partyDefeated)
+                baseTint = new Color(0.72f, 0.06f, 0.04f, 0.86f);
 
             while (elapsed < duration)
             {
@@ -338,7 +344,9 @@ public sealed class AssaultBattleHUD : MonoBehaviour
                 ? "TARGET DEFEATED"
                 : reason == AssaultBattleEndReason.TimeExpired
                     ? "TIME EXPIRED"
-                    : "BATTLE COMPLETE";
+                    : reason == AssaultBattleEndReason.PartyDefeated
+                        ? "SQUAD DEFEATED"
+                        : "BATTLE COMPLETE";
             resultReasonText.text =
                 $"{resultReason}  {FormatTime(battleController.ElapsedTime, false)}";
         }

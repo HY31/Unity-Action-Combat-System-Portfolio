@@ -49,6 +49,7 @@ public class PlayerController : MonoBehaviour
         : 0f;
     public bool IsDefeated => currentHp <= 0f;
     public event System.Action<PlayerController> HealthChanged;
+    public event System.Action<PlayerController> Defeated;
 
 
     [Header("Reference")]
@@ -225,6 +226,10 @@ public class PlayerController : MonoBehaviour
 
         ApplyDamage(hitData.rawDamage);
 
+        // 전투 불능 이벤트가 파티 자동 교체를 즉시 실행하므로 기존 캐릭터의 피격 상태를 더 진행하지 않는다.
+        if (IsDefeated)
+            return true;
+
         Vector3 awayFromSource = transform.position - sourcePosition;
         awayFromSource.y = 0f;
 
@@ -263,12 +268,42 @@ public class PlayerController : MonoBehaviour
 
     private void SetCurrentHealth(float value)
     {
+        bool wasDefeated = IsDefeated;
         float clampedValue = Mathf.Clamp(value, 0f, Mathf.Max(0f, CurrentMaxHp));
         if (Mathf.Approximately(currentHp, clampedValue))
             return;
 
         currentHp = clampedValue;
         HealthChanged?.Invoke(this);
+
+        if (!wasDefeated && IsDefeated)
+        {
+            SetCombatControlEnabled(false);
+            Defeated?.Invoke(this);
+        }
+    }
+
+    public void SetCombatControlEnabled(bool controlEnabled)
+    {
+        if (controlEnabled)
+        {
+            if (IsDefeated)
+                return;
+
+            enabled = true;
+            if (isInitialized && currentState == null)
+                ChangeState(LocomotionState);
+            return;
+        }
+
+        // 시간 종료와 전투 불능 모두 같은 정리 경로를 사용해 공격 판정이나 무적 상태가 결과 화면 뒤에 남지 않게 한다.
+        MoveInput = Vector2.zero;
+        SetCurrentSpeed(0f);
+        currentState?.Exit();
+        currentState = null;
+        attackHitBox?.SetActive(false);
+        IsInvincible = false;
+        enabled = false;
     }
 
     public void HandleGravity()

@@ -11,7 +11,9 @@ public class PartyManager : MonoBehaviour
 {
     public PlayerController[] partyMembers;
     private int currentIndex = 0;
+    private bool partyDefeatedRaised;
     public event System.Action<PlayerController> ActiveCharacterChanged;
+    public event System.Action PartyDefeated;
 
     [SerializeField] private ThirdPersonCameraController cameraController;
 
@@ -37,8 +39,23 @@ public class PartyManager : MonoBehaviour
                 enabled = false;
                 return;
             }
+
+            partyMembers[i].Defeated -= OnMemberDefeated;
+            partyMembers[i].Defeated += OnMemberDefeated;
         }
 
+    }
+
+    private void OnDestroy()
+    {
+        if (partyMembers == null)
+            return;
+
+        for (int i = 0; i < partyMembers.Length; i++)
+        {
+            if (partyMembers[i] != null)
+                partyMembers[i].Defeated -= OnMemberDefeated;
+        }
     }
 
     private void Start()
@@ -80,21 +97,26 @@ public class PartyManager : MonoBehaviour
 
     public PlayerController GetCurrentCharacter()
     {
+        if (partyMembers == null ||
+            currentIndex < 0 ||
+            currentIndex >= partyMembers.Length)
+        {
+            return null;
+        }
+
         return partyMembers[currentIndex];
     }
 
     public PlayerController GetNextCharacter()
     {
-        int nextIndex = (currentIndex + 1) % partyMembers.Length;
-
-        return partyMembers[nextIndex];
+        int nextIndex = FindAvailableMemberIndex(1);
+        return nextIndex >= 0 ? partyMembers[nextIndex] : null;
     }
 
     public PlayerController GetPreviousCharacter()
     {
-        int prevIndex = (currentIndex - 1 + partyMembers.Length) % partyMembers.Length;
-
-        return partyMembers[prevIndex];
+        int previousIndex = FindAvailableMemberIndex(-1);
+        return previousIndex >= 0 ? partyMembers[previousIndex] : null;
     }
 
     public PlayerController SwitchTo(
@@ -106,6 +128,8 @@ public class PartyManager : MonoBehaviour
 
         PlayerController currentPlayer = partyMembers[currentIndex];
         PlayerController switchedPlayer = partyMembers[targetIndex];
+        if (currentPlayer == null || switchedPlayer == null || switchedPlayer.IsDefeated)
+            return null;
 
         // 일반 교체는 현재 위치를 사용하고, 패링 교체는 미리 계산한 보스 정면 위치를 사용한다.
         switchedPlayer.transform.SetPositionAndRotation(
@@ -135,7 +159,10 @@ public class PartyManager : MonoBehaviour
             return false;
 
         int offset = side <= 0 ? -1 : 1;
-        int targetIndex = (currentIndex + offset + partyMembers.Length) % partyMembers.Length;
+        int targetIndex = FindAvailableMemberIndex(offset);
+        if (targetIndex < 0 || targetIndex == currentIndex)
+            return false;
+
         PlayerController sourcePlayer = partyMembers[currentIndex];
 
         Vector3 enemyToPlayer = sourcePlayer.transform.position - enemy.transform.position;
@@ -167,7 +194,9 @@ public class PartyManager : MonoBehaviour
     {
         if (0 >= partyMembers.Length) return;
 
-        int nextIndex = (currentIndex + 1) % partyMembers.Length;
+        int nextIndex = FindAvailableMemberIndex(1);
+        if (nextIndex < 0 || nextIndex == currentIndex)
+            return;
 
         PlayerController sourcePlayer = partyMembers[currentIndex];
         // 교체 전에 판정한 적을 보존해야 활성 캐릭터가 바뀐 뒤에도 같은 공격을 끊을 수 있다.
@@ -209,7 +238,9 @@ public class PartyManager : MonoBehaviour
     {
         if (0 >= partyMembers.Length) return;
 
-        int prevIndex = (currentIndex - 1 + partyMembers.Length) % partyMembers.Length;
+        int prevIndex = FindAvailableMemberIndex(-1);
+        if (prevIndex < 0 || prevIndex == currentIndex)
+            return;
 
         PlayerController sourcePlayer = partyMembers[currentIndex];
         // 다음/이전 교체 모두 현재 캐릭터 기준으로 같은 지원 판정 규칙을 사용한다.
@@ -296,6 +327,65 @@ public class PartyManager : MonoBehaviour
             return SupportType.PerfectDodgeSupport;
 
         return SupportType.Normal;
+    }
+
+    public void SetPartyControlEnabled(bool controlEnabled)
+    {
+        if (partyMembers == null)
+            return;
+
+        for (int i = 0; i < partyMembers.Length; i++)
+        {
+            PlayerController member = partyMembers[i];
+            if (member != null)
+                member.SetCombatControlEnabled(controlEnabled);
+        }
+    }
+
+    private int FindAvailableMemberIndex(int direction)
+    {
+        if (partyMembers == null || partyMembers.Length == 0)
+            return -1;
+
+        int stepDirection = direction < 0 ? -1 : 1;
+        for (int step = 1; step <= partyMembers.Length; step++)
+        {
+            int index = (currentIndex + stepDirection * step + partyMembers.Length) %
+                partyMembers.Length;
+            PlayerController member = partyMembers[index];
+
+            if (member != null && !member.IsDefeated)
+                return index;
+        }
+
+        return -1;
+    }
+
+    private void OnMemberDefeated(PlayerController defeatedMember)
+    {
+        if (partyDefeatedRaised)
+            return;
+
+        int nextIndex = FindAvailableMemberIndex(1);
+        if (nextIndex < 0)
+        {
+            partyDefeatedRaised = true;
+            PartyDefeated?.Invoke();
+            return;
+        }
+
+        if (defeatedMember != GetCurrentCharacter())
+            return;
+
+        Vector3 switchPosition = defeatedMember.transform.position;
+        Quaternion switchRotation = defeatedMember.transform.rotation;
+        PlayerController nextPlayer = SwitchTo(
+            nextIndex,
+            switchPosition,
+            switchRotation);
+
+        if (nextPlayer != null)
+            nextPlayer.ChangeState(nextPlayer.LocomotionState);
     }
 
     private void ResolveSwitchPose(

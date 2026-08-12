@@ -11,7 +11,8 @@ public enum AssaultBattleState
 public enum AssaultBattleEndReason
 {
     TimeExpired,
-    BossDefeated
+    BossDefeated,
+    PartyDefeated
 }
 
 [DisallowMultipleComponent]
@@ -19,6 +20,7 @@ public sealed class AssaultBattleController : MonoBehaviour
 {
     [Header("Encounter")]
     [SerializeField] private EnemyController boss;
+    [SerializeField] private PartyManager partyManager;
     [SerializeField] private bool deactivateBossWhileWaiting = true;
 
     [Header("Rules")]
@@ -45,6 +47,7 @@ public sealed class AssaultBattleController : MonoBehaviour
     [SerializeField] private int currentScore;
 
     private bool bossEventsSubscribed;
+    private bool partyEventsSubscribed;
     private bool operationEventsSubscribed;
 
     public AssaultBattleState State => state;
@@ -73,12 +76,14 @@ public sealed class AssaultBattleController : MonoBehaviour
     private void Awake()
     {
         ResolveBoss();
+        ResolvePartyManager();
         PrepareWaitingState();
     }
 
     private void OnDestroy()
     {
         UnsubscribeBossEvents();
+        UnsubscribePartyEvents();
         UnsubscribeOperationEvents();
     }
 
@@ -126,6 +131,7 @@ public sealed class AssaultBattleController : MonoBehaviour
             return false;
 
         ResolveBoss();
+        ResolvePartyManager();
         if (boss == null)
         {
             Debug.LogError("강습전 시작 실패: 보스가 연결되지 않았습니다.", this);
@@ -147,7 +153,9 @@ public sealed class AssaultBattleController : MonoBehaviour
         if (combatAI != null)
             combatAI.enabled = true;
 
+        partyManager?.SetPartyControlEnabled(true);
         SubscribeBossEvents();
+        SubscribePartyEvents();
         SubscribeOperationEvents();
         state = AssaultBattleState.Fighting;
 
@@ -169,8 +177,10 @@ public sealed class AssaultBattleController : MonoBehaviour
 
         RemainingTimeChanged?.Invoke(remainingTime);
         UnsubscribeBossEvents();
+        UnsubscribePartyEvents();
         UnsubscribeOperationEvents();
         StopBossCombat();
+        partyManager?.SetPartyControlEnabled(false);
         BattleFinished?.Invoke(reason);
         return true;
     }
@@ -184,6 +194,12 @@ public sealed class AssaultBattleController : MonoBehaviour
             FindObjectsInactive.Include);
     }
 
+    private void ResolvePartyManager()
+    {
+        if (partyManager == null)
+            partyManager = FindFirstObjectByType<PartyManager>();
+    }
+
     private void PrepareWaitingState()
     {
         state = AssaultBattleState.Waiting;
@@ -194,6 +210,7 @@ public sealed class AssaultBattleController : MonoBehaviour
         operationScore = 0;
         currentScore = 0;
         UnsubscribeBossEvents();
+        UnsubscribePartyEvents();
         UnsubscribeOperationEvents();
 
         if (boss == null)
@@ -239,6 +256,24 @@ public sealed class AssaultBattleController : MonoBehaviour
         boss.DamageTaken -= OnBossDamageTaken;
         boss.Defeated -= OnBossDefeated;
         bossEventsSubscribed = false;
+    }
+
+    private void SubscribePartyEvents()
+    {
+        if (partyManager == null || partyEventsSubscribed)
+            return;
+
+        partyManager.PartyDefeated += OnPartyDefeated;
+        partyEventsSubscribed = true;
+    }
+
+    private void UnsubscribePartyEvents()
+    {
+        if (partyManager == null || !partyEventsSubscribed)
+            return;
+
+        partyManager.PartyDefeated -= OnPartyDefeated;
+        partyEventsSubscribed = false;
     }
 
     private void OnBossDamageTaken(EnemyController damagedBoss, float damage)
@@ -346,5 +381,10 @@ public sealed class AssaultBattleController : MonoBehaviour
     {
         if (defeatedBoss == boss)
             FinishBattle(AssaultBattleEndReason.BossDefeated);
+    }
+
+    private void OnPartyDefeated()
+    {
+        FinishBattle(AssaultBattleEndReason.PartyDefeated);
     }
 }
