@@ -123,6 +123,15 @@ public class CharacterBuildPipeline : MonoBehaviour
 
         if (data != null)
         {
+            if (data.statData == null)
+            {
+                AddError("CharacterData.statData가 없습니다.");
+            }
+            else if (!data.statData.HasUsableStats)
+            {
+                AddError("CharacterData.statData.levelStats가 비어 있습니다.");
+            }
+
             AddErrorIfEmpty(data.idleAnim, "CharacterData.idleAnim");
             AddErrorIfEmpty(data.walkStartAnim, "CharacterData.walkStartAnim");
             AddErrorIfEmpty(data.walkLoopAnim, "CharacterData.walkLoopAnim");
@@ -323,6 +332,28 @@ public class CharacterBuildPipeline : MonoBehaviour
 
         characterData.characterName = preset.characterName;
         characterData.statData = statData;
+
+        if (!statData.HasUsableStats)
+        {
+            // 새 캐릭터가 공격력 0인 채 생성되지 않도록 즉시 플레이 가능한 기준 스탯을 함께 만든다.
+            statData.levelStats = new[]
+            {
+                new CharacterLevelStat
+                {
+                    level = 1,
+                    attack = 600f,
+                    defense = 50f,
+                    hp = 100f,
+                    impact = 10f,
+                    critRate = 0.05f,
+                    critDamage = 0.5f,
+                    anomalyProficiency = 100f,
+                    anomalyMastery = 100f,
+                    penRatio = 0.1f,
+                    energyRegen = 1f
+                }
+            };
+        }
 
         AttackData[] combo = new AttackData[preset.normalComboCount];
         for (int i = 0; i < combo.Length; i++)

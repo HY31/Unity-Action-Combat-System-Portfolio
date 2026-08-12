@@ -21,9 +21,11 @@ public class CharacterStatData : ScriptableObject
 {
     public CharacterLevelStat[] levelStats;
 
+    public bool HasUsableStats => levelStats != null && levelStats.Length > 0;
+
     public CharacterLevelStat GetStatByLevel(int level)
     {
-        if (levelStats == null || levelStats.Length == 0)
+        if (!HasUsableStats)
             return default;
 
         // 정확한 레벨이 없으면 요청 레벨을 넘지 않는 가장 가까운 구간의 스탯을 사용한다.

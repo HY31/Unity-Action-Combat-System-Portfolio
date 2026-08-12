@@ -150,6 +150,14 @@ public class PlayerController : MonoBehaviour
             return;
         }
 
+        if (characterData.statData == null || !characterData.statData.HasUsableStats)
+        {
+            // 빈 스탯 데이터는 모든 전투 수치를 0으로 만들어도 컴파일 오류가 나지 않으므로 시작 시 명시적으로 차단한다.
+            Debug.LogError($"'{characterData.characterName}'의 레벨별 전투 스탯이 없습니다.", this);
+            enabled = false;
+            return;
+        }
+
         // 파티 HUD와 전투 판정이 같은 런타임 체력 원본을 사용하도록 시작 시 최대 체력으로 초기화한다.
         currentHp = Mathf.Max(0f, CurrentMaxHp);
 
