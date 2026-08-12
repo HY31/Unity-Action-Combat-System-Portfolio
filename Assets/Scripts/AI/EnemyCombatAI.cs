@@ -1,14 +1,5 @@
 using UnityEngine;
 
-public enum EnemyLocomotionMode
-{
-    Idle,
-    Approach,
-    Retreat,
-    StrafeLeft,
-    StrafeRight
-}
-
 // AI가 붙는 보스 루트에는 공격 실행기와 이동용 Rigidbody가 반드시 함께 있어야 한다.
 [RequireComponent(typeof(EnemyController), typeof(Rigidbody))]
 public class EnemyCombatAI : MonoBehaviour
@@ -19,54 +10,28 @@ public class EnemyCombatAI : MonoBehaviour
     [Header("Movement")]
     [SerializeField, Min(0f)] private float rotationSpeed = 360f;
     [SerializeField, Min(0f)] private float moveSpeed = 3.5f;
-    [Tooltip("이 거리 안에 들어오면 직선 추적을 멈추고 전투 포지셔닝을 시작한다.")]
+    [Tooltip("이 거리 안에서는 이동을 멈추고 연속 공격을 시도한다.")]
     [SerializeField, Min(0f)] private float stoppingDistance = 4.5f;
-
-    [Header("Combat Positioning")]
-    [Tooltip("이 거리보다 가까우면 공격 공간을 확보하기 위해 뒤로 물러난다.")]
-    [SerializeField, Min(0f)] private float minimumCombatDistance = 2.7f;
-    [Tooltip("선회 중 유지하려는 기준 거리다.")]
-    [SerializeField, Min(0f)] private float preferredCombatDistance = 3.65f;
-    [Tooltip("기준 거리에서 이 값만큼 벗어나면 앞뒤로 거리를 보정한다.")]
-    [SerializeField, Min(0f)] private float distanceTolerance = 0.4f;
-    [SerializeField, Min(0f)] private float strafeSpeed = 1.9f;
-    [SerializeField, Min(0f)] private float retreatSpeed = 2.25f;
-    [SerializeField, Min(0.1f)] private float minStrafeDuration = 1.1f;
-    [SerializeField, Min(0.1f)] private float maxStrafeDuration = 2.35f;
-    [SerializeField, Min(0f)] private float minStrafePause = 0.12f;
-    [SerializeField, Min(0f)] private float maxStrafePause = 0.38f;
 
     [Header("Animation")]
     [SerializeField] private string moveAnimationName =
         "NotoriousDeadEndButcher_Ani_P1_Run_Loop";
-    [SerializeField] private string retreatAnimationName =
-        "NotoriousDeadEndButcher_Ani_P1_Walk_B_Loop";
-    [SerializeField] private string strafeLeftAnimationName =
-        "NotoriousDeadEndButcher_Ani_P1_Walk_L_Loop";
-    [SerializeField] private string strafeRightAnimationName =
-        "NotoriousDeadEndButcher_Ani_P1_Walk_R_Loop";
     [SerializeField] private string idleAnimationName =
         "NotoriousDeadEndButcher_Ani_P1_Idle_Loop";
     [SerializeField, Range(0f, 0.5f)] private float animationBlendDuration = 0.1f;
 
-    [Header("Combat")]
-    [SerializeField, Min(0f)] private float minAttackCooldown = 1f;
-    [SerializeField, Min(0f)] private float maxAttackCooldown = 2f;
-    [SerializeField, Range(0f, 180f)] private float attackFacingTolerance = 15f;
-
-    [Header("Runtime")]
-    [SerializeField] private EnemyLocomotionMode locomotionMode = EnemyLocomotionMode.Idle;
+    [Header("Combat Pressure")]
+    [Tooltip("한 패턴이 끝난 뒤 다음 패턴을 시작하기까지의 최소 대기 시간이다.")]
+    [SerializeField, Min(0f)] private float minAttackCooldown = 0.12f;
+    [Tooltip("한 패턴이 끝난 뒤 다음 패턴을 시작하기까지의 최대 대기 시간이다.")]
+    [SerializeField, Min(0f)] private float maxAttackCooldown = 0.32f;
+    [SerializeField, Range(0f, 180f)] private float attackFacingTolerance = 22f;
 
     private EnemyController enemyController;
     private Rigidbody enemyRigidbody;
     private PlayerController targetPlayer;
-    private string currentLocomotionAnimation;
+    private string currentMovementAnimation;
     private float attackCooldownRemaining;
-    private float strafeTimeRemaining;
-    private float strafePauseRemaining;
-    private int strafeDirection = 1;
-
-    public EnemyLocomotionMode LocomotionMode => locomotionMode;
 
     private void Awake()
     {
@@ -78,15 +43,13 @@ public class EnemyCombatAI : MonoBehaviour
             partyManager = FindFirstObjectByType<PartyManager>();
 
         ResetAttackCooldown();
-        ResetStrafeCycle(true);
     }
 
     private void OnEnable()
     {
+        // 강습전 트리거가 보스를 활성화할 때 첫 공격도 짧은 준비 시간 뒤 시작한다.
         ResetAttackCooldown();
-        ResetStrafeCycle(true);
-        currentLocomotionAnimation = null;
-        locomotionMode = EnemyLocomotionMode.Idle;
+        currentMovementAnimation = null;
     }
 
     private void Update()
@@ -103,20 +66,20 @@ public class EnemyCombatAI : MonoBehaviour
             enemyController.IsGroggy ||
             enemyController.IsInHitReaction)
         {
-            // 공격·경직 애니메이션이 끝난 뒤 이동 애니메이션을 다시 선택하도록 캐시만 비운다.
-            currentLocomotionAnimation = null;
-            locomotionMode = EnemyLocomotionMode.Idle;
+            // 공격·경직·그로기 애니메이션은 EnemyController가 소유하므로 이동 애니메이션으로 덮지 않는다.
+            currentMovementAnimation = null;
             return;
         }
 
         if (targetPlayer == null)
         {
-            SetLocomotion(EnemyLocomotionMode.Idle, Vector3.zero, 0f);
+            SetMovementAnimation(idleAnimationName);
             return;
         }
 
         RotateTowardTarget();
-        UpdateCombatMovement();
+        bool moved = MoveTowardTarget();
+        SetMovementAnimation(moved ? moveAnimationName : idleAnimationName);
     }
 
     private void RefreshTarget()
@@ -124,15 +87,9 @@ public class EnemyCombatAI : MonoBehaviour
         if (partyManager == null)
             partyManager = FindFirstObjectByType<PartyManager>();
 
-        PlayerController nextTarget = partyManager != null
+        targetPlayer = partyManager != null
             ? partyManager.GetCurrentCharacter()
             : null;
-
-        if (nextTarget == targetPlayer)
-            return;
-
-        targetPlayer = nextTarget;
-        ResetStrafeCycle(true);
     }
 
     private void RotateTowardTarget()
@@ -152,149 +109,49 @@ public class EnemyCombatAI : MonoBehaviour
         enemyRigidbody.MoveRotation(nextRotation);
     }
 
-    private void UpdateCombatMovement()
+    private bool MoveTowardTarget()
     {
-        Vector3 towardTarget = targetPlayer.transform.position - enemyRigidbody.position;
-        towardTarget.y = 0f;
+        Vector3 direction = targetPlayer.transform.position - enemyRigidbody.position;
+        direction.y = 0f;
 
-        float distance = towardTarget.magnitude;
-        if (distance <= 0.0001f)
-        {
-            SetLocomotion(EnemyLocomotionMode.Idle, Vector3.zero, 0f);
-            return;
-        }
+        float distance = direction.magnitude;
+        float remainingDistance = distance - stoppingDistance;
+        if (remainingDistance <= 0f || distance <= 0.0001f)
+            return false;
 
-        towardTarget /= distance;
+        // 공격 가능 거리에 들어오면 정확히 멈추도록 남은 거리보다 많이 이동하지 않는다.
+        float moveDistance = Mathf.Min(
+            moveSpeed * Time.fixedDeltaTime,
+            remainingDistance);
+        Vector3 nextPosition =
+            enemyRigidbody.position + direction.normalized * moveDistance;
 
-        if (distance > stoppingDistance)
-        {
-            SetLocomotion(EnemyLocomotionMode.Approach, towardTarget, moveSpeed);
-            return;
-        }
-
-        if (distance < minimumCombatDistance)
-        {
-            SetLocomotion(EnemyLocomotionMode.Retreat, -towardTarget, retreatSpeed);
-            return;
-        }
-
-        UpdateStrafeCycle();
-        if (strafePauseRemaining > 0f)
-        {
-            SetLocomotion(EnemyLocomotionMode.Idle, Vector3.zero, 0f);
-            return;
-        }
-
-        float lowerDistance = Mathf.Max(
-            minimumCombatDistance,
-            preferredCombatDistance - distanceTolerance);
-        float upperDistance = Mathf.Min(
-            stoppingDistance,
-            preferredCombatDistance + distanceTolerance);
-
-        Vector3 radialCorrection = Vector3.zero;
-        if (distance < lowerDistance)
-            radialCorrection = -towardTarget;
-        else if (distance > upperDistance)
-            radialCorrection = towardTarget;
-
-        Vector3 tangent = Vector3.Cross(Vector3.up, towardTarget) * strafeDirection;
-        Vector3 moveDirection = (tangent + radialCorrection * 0.45f).normalized;
-        EnemyLocomotionMode strafeMode = strafeDirection < 0
-            ? EnemyLocomotionMode.StrafeLeft
-            : EnemyLocomotionMode.StrafeRight;
-
-        SetLocomotion(strafeMode, moveDirection, strafeSpeed);
-    }
-
-    private void UpdateStrafeCycle()
-    {
-        if (strafePauseRemaining > 0f)
-        {
-            strafePauseRemaining = Mathf.Max(
-                0f,
-                strafePauseRemaining - Time.fixedDeltaTime);
-
-            if (strafePauseRemaining <= 0f)
-                ResetStrafeCycle(false);
-
-            return;
-        }
-
-        strafeTimeRemaining = Mathf.Max(
-            0f,
-            strafeTimeRemaining - Time.fixedDeltaTime);
-        if (strafeTimeRemaining > 0f)
-            return;
-
-        float minimumPause = Mathf.Min(minStrafePause, maxStrafePause);
-        float maximumPause = Mathf.Max(minStrafePause, maxStrafePause);
-        strafePauseRemaining = Random.Range(minimumPause, maximumPause);
-        strafeDirection *= -1;
-    }
-
-    private void ResetStrafeCycle(bool randomizeDirection)
-    {
-        float minimum = Mathf.Min(minStrafeDuration, maxStrafeDuration);
-        float maximum = Mathf.Max(minStrafeDuration, maxStrafeDuration);
-        strafeTimeRemaining = Random.Range(minimum, maximum);
-        strafePauseRemaining = 0f;
-
-        if (randomizeDirection)
-            strafeDirection = Random.value < 0.5f ? -1 : 1;
-    }
-
-    private void SetLocomotion(
-        EnemyLocomotionMode nextMode,
-        Vector3 moveDirection,
-        float speed)
-    {
-        locomotionMode = nextMode;
-        string nextAnimation = ResolveLocomotionAnimation(nextMode);
-
-        if (currentLocomotionAnimation != nextAnimation)
-        {
-            currentLocomotionAnimation = nextAnimation;
-
-            if (enemyController.animator != null &&
-                !string.IsNullOrEmpty(nextAnimation))
-            {
-                // 이동 모드가 바뀔 때만 전환해 루프 애니메이션이 매 프레임 재시작되지 않게 한다.
-                enemyController.animator.CrossFade(
-                    nextAnimation,
-                    animationBlendDuration);
-            }
-        }
-
-        if (speed <= 0f || moveDirection.sqrMagnitude < 0.0001f)
-            return;
-
-        Vector3 nextPosition = enemyRigidbody.position +
-            moveDirection.normalized * speed * Time.fixedDeltaTime;
         enemyRigidbody.MovePosition(nextPosition);
+        return true;
     }
 
-    private string ResolveLocomotionAnimation(EnemyLocomotionMode mode)
+    private void SetMovementAnimation(string nextAnimation)
     {
-        return mode switch
-        {
-            EnemyLocomotionMode.Approach => moveAnimationName,
-            EnemyLocomotionMode.Retreat => retreatAnimationName,
-            EnemyLocomotionMode.StrafeLeft => strafeLeftAnimationName,
-            EnemyLocomotionMode.StrafeRight => strafeRightAnimationName,
-            _ => idleAnimationName
-        };
+        if (currentMovementAnimation == nextAnimation)
+            return;
+
+        currentMovementAnimation = nextAnimation;
+        if (enemyController.animator == null || string.IsNullOrEmpty(nextAnimation))
+            return;
+
+        // 이동과 대기 상태가 실제로 바뀔 때만 전환해 루프가 매 물리 프레임 재시작되지 않게 한다.
+        enemyController.animator.CrossFade(nextAnimation, animationBlendDuration);
     }
 
     private void UpdateAttackDecision()
     {
-        if (targetPlayer == null)
-            return;
-
-        if (enemyController.IsAttacking ||
+        if (targetPlayer == null ||
+            enemyController.IsAttacking ||
             enemyController.IsGroggy ||
             enemyController.IsInHitReaction)
+        {
             return;
+        }
 
         Vector3 direction = targetPlayer.transform.position - enemyRigidbody.position;
         direction.y = 0f;
@@ -313,17 +170,16 @@ public class EnemyCombatAI : MonoBehaviour
                 return;
         }
 
-        // 전투 거리와 방향 조건을 만족한 시간만 쿨타임으로 계산한다.
+        // 공격할 수 있는 거리에서는 선회하지 않고 다음 패턴까지의 짧은 텀만 계산한다.
         attackCooldownRemaining -= Time.deltaTime;
         if (attackCooldownRemaining > 0f)
             return;
 
-        if (enemyController.TryStartAttack())
-        {
-            currentLocomotionAnimation = null;
-            ResetAttackCooldown(enemyController.CurrentAttackRecoveryDelay);
-            ResetStrafeCycle(true);
-        }
+        if (!enemyController.TryStartAttack())
+            return;
+
+        currentMovementAnimation = null;
+        ResetAttackCooldown(enemyController.CurrentAttackRecoveryDelay);
     }
 
     private void ResetAttackCooldown(float additionalDelay = 0f)
