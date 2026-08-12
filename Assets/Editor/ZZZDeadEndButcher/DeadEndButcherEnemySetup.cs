@@ -321,7 +321,25 @@ internal static class DeadEndButcherEnemySetup
         data.groggyDuration = 10f;
         data.groggyDamageMultiplier = 1.5f;
         data.anomalyThreshold = 100f;
-        data.elementModifiers = Array.Empty<EnemyElementModifier>();
+        data.anomalyBurstDamageMultiplier = 6f;
+        data.weakAnomalyReactionDuration = 0.7f;
+        data.elementModifiers = new[]
+        {
+            new EnemyElementModifier
+            {
+                element = CombatElement.Ice,
+                isWeakness = true,
+                damageMultiplier = 1.2f,
+                anomalyMultiplier = 1.25f
+            },
+            new EnemyElementModifier
+            {
+                element = CombatElement.Ether,
+                isWeakness = true,
+                damageMultiplier = 1.2f,
+                anomalyMultiplier = 1.25f
+            }
+        };
         data.attackPatterns = attackData;
         EditorUtility.SetDirty(data);
         return data;

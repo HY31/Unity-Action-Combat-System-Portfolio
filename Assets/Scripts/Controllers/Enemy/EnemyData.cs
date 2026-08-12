@@ -39,6 +39,10 @@ public class EnemyData : ScriptableObject
 
     [Header("Anomaly")]
     public float anomalyThreshold = 100f;
+    [Tooltip("속성 이상이 발동할 때 마지막으로 게이지를 채운 캐릭터의 공격력에 곱하는 피해 계수다.")]
+    [Min(0f)] public float anomalyBurstDamageMultiplier = 6f;
+    [Tooltip("약점 속성 이상이 발동했을 때 보스의 공격을 끊는 경직 시간이다.")]
+    [Min(0.01f)] public float weakAnomalyReactionDuration = 0.7f;
     public EnemyElementModifier[] elementModifiers;
 
     [Header("Attack Patterns")]
@@ -52,6 +56,7 @@ public class EnemyData : ScriptableObject
             return new EnemyElementModifier
             {
                 element = element,
+                isWeakness = false,
                 damageMultiplier = 1f,
                 anomalyMultiplier = 1f
             };
@@ -66,6 +71,7 @@ public class EnemyData : ScriptableObject
         return new EnemyElementModifier
         {
             element = element,
+            isWeakness = false,
             damageMultiplier = 1f,
             anomalyMultiplier = 1f
         };

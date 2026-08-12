@@ -881,39 +881,22 @@ public class EnemyController : MonoBehaviour
         if (hitData.attacker == null) return;
         if (enemyData == null) return;
 
-        float baseDamage = hitData.attacker.CurrentAttack * hitData.damageMultiplier;
-
-        // 관통률로 줄어든 유효 방어력을 완만한 승수로 바꿔 방어력이 피해를 완전히 막지 않게 한다.
-        float effectiveDefense = enemyData.defense * (1f - hitData.attacker.CurrentPenRatio);
-        effectiveDefense = Mathf.Max(0f, effectiveDefense);
-
-        float defenseMultiplier = 100f / (100f + effectiveDefense);
-
-        // 그로기 중 받는 피해 배율은 UI가 아닌 적 전투 데이터에서 결정한다.
-        float finalDamage = baseDamage * defenseMultiplier * CurrentDamageTakenMultiplier;
-        float hpBeforeDamage = currentHp;
-
-        currentHp = Mathf.Clamp(currentHp - finalDamage, 0f, enemyData.maxHp);
-        float appliedDamage = hpBeforeDamage - currentHp;
+        EnemyElementModifier modifier =
+            enemyData.GetElementModifier(hitData.resolvedElement);
+        float finalDamage = CalculateIncomingDamage(
+            hitData.attacker,
+            hitData.damageMultiplier,
+            modifier);
 
         bool emphasizeDamage =
             hitData.canTriggerChainSkill ||
             hitData.damageMultiplier >= 1.5f ||
             hitData.impactMultiplier >= 1.25f;
-        CombatDamageNumberUI.Play(
-            transform.position + Vector3.up * 1.65f,
-            finalDamage,
-            hitData.resolvedElement,
-            emphasizeDamage);
-
-        if (appliedDamage > 0f)
-            DamageTaken?.Invoke(this, appliedDamage);
-
-        if (currentHp <= 0f)
-        {
-            HandleDefeat();
+        if (ApplyDamage(
+                finalDamage,
+                hitData.resolvedElement,
+                emphasizeDamage))
             return;
-        }
 
         float stunDamage = 0f;
         if (!isGroggy)
@@ -932,7 +915,6 @@ public class EnemyController : MonoBehaviour
 
         if (hitData.resolvedElement != CombatElement.None)
         {
-            EnemyElementModifier modifier = enemyData.GetElementModifier(hitData.resolvedElement);
             float appliedBuildUp = hitData.anomalyBuildUp * modifier.anomalyMultiplier;
 
             // 배열 원소가 struct이므로 복사본을 수정한 뒤 같은 인덱스에 다시 기록해야 한다.
@@ -947,7 +929,7 @@ public class EnemyController : MonoBehaviour
                 currentAnomalyGauge = state.gauge;
                 anomalyStates[i] = state;
 
-                TryTriggerAnomaly(state.element, i);
+                TryTriggerAnomaly(state.element, i, hitData.attacker);
 
                 break;
             }
@@ -987,16 +969,108 @@ public class EnemyController : MonoBehaviour
 
         return 0f;
     }
-    private void TriggerAnomaly(CombatElement element)
+
+    private float CalculateIncomingDamage(
+        PlayerController attacker,
+        float attackMultiplier,
+        EnemyElementModifier modifier)
     {
+        float baseDamage = attacker.CurrentAttack * Mathf.Max(0f, attackMultiplier);
+
+        // 관통률로 줄어든 유효 방어력을 완만한 승수로 바꿔 방어력이 피해를 완전히 막지 않게 한다.
+        float effectiveDefense = enemyData.defense * (1f - attacker.CurrentPenRatio);
+        effectiveDefense = Mathf.Max(0f, effectiveDefense);
+        float defenseMultiplier = 100f / (100f + effectiveDefense);
+        float elementMultiplier = Mathf.Max(0f, modifier.damageMultiplier);
+
+        // 그로기 중 받는 피해와 속성 약점 배율은 일반 타격과 이상 폭발에 같은 순서로 적용한다.
+        return baseDamage *
+            defenseMultiplier *
+            elementMultiplier *
+            CurrentDamageTakenMultiplier;
     }
 
-    private void TryTriggerAnomaly(CombatElement element, int stateIndex)
+    private bool ApplyDamage(
+        float damage,
+        CombatElement element,
+        bool emphasizeDamage)
+    {
+        float hpBeforeDamage = currentHp;
+        currentHp = Mathf.Clamp(
+            currentHp - Mathf.Max(0f, damage),
+            0f,
+            enemyData.maxHp);
+        float appliedDamage = hpBeforeDamage - currentHp;
+
+        if (appliedDamage > 0f)
+        {
+            CombatDamageNumberUI.Play(
+                transform.position + Vector3.up * 1.65f,
+                appliedDamage,
+                element,
+                emphasizeDamage);
+            DamageTaken?.Invoke(this, appliedDamage);
+        }
+
+        if (currentHp > 0f)
+            return false;
+
+        HandleDefeat();
+        return true;
+    }
+
+    private void TriggerAnomaly(CombatElement element, PlayerController attacker)
+    {
+        EnemyElementModifier modifier = enemyData.GetElementModifier(element);
+
+        CombatHitVfx.Play(
+            transform.position + Vector3.up * 1.6f,
+            Vector3.up,
+            element,
+            modifier.isWeakness ? 1.8f : 1.45f);
+        CombatPresentationEffects.PlayAnomalyBurst(element, modifier.isWeakness);
+
+        float burstDamage = CalculateIncomingDamage(
+            attacker,
+            enemyData.anomalyBurstDamageMultiplier,
+            modifier);
+        if (ApplyDamage(burstDamage, element, true))
+            return;
+
+        if (modifier.isWeakness)
+            BeginWeakAnomalyReaction();
+    }
+
+    private void BeginWeakAnomalyReaction()
+    {
+        if (isGroggy)
+            return;
+
+        bool wasAlreadyReacting = isInHitReaction;
+        isInHitReaction = true;
+        hitReactionTimeRemaining = Mathf.Max(
+            hitReactionTimeRemaining,
+            enemyData.weakAnomalyReactionDuration);
+        currentHitReactionGauge = 0f;
+        InterruptAttack();
+
+        if (!wasAlreadyReacting &&
+            animator != null &&
+            !string.IsNullOrEmpty(enemyData.hitReactionAnim))
+        {
+            animator.CrossFade(enemyData.hitReactionAnim, 0.04f);
+        }
+    }
+
+    private void TryTriggerAnomaly(
+        CombatElement element,
+        int stateIndex,
+        PlayerController attacker)
     {
         if (anomalyStates[stateIndex].gauge < enemyData.anomalyThreshold)
             return;
 
-        TriggerAnomaly(element);
+        TriggerAnomaly(element, attacker);
 
         // 발동한 속성 게이지만 비우고 다른 속성의 누적 상태는 유지한다.
         EnemyAnomalyState state = anomalyStates[stateIndex];

@@ -54,6 +54,18 @@ public sealed class CombatPresentationEffects : MonoBehaviour
         ThirdPersonCameraController.Active?.PunchFieldOfView(-4f, 0.32f);
     }
 
+    public static void PlayAnomalyBurst(CombatElement element, bool isWeakness)
+    {
+        float slowMotionDuration = isWeakness ? 0.12f : 0.07f;
+        float flashAlpha = isWeakness ? 0.09f : 0.055f;
+
+        HitStop.DoSlowMotion(slowMotionDuration, 0.06f, 0.2f);
+        Flash(ResolveElementColor(element), flashAlpha, 0.22f);
+        ThirdPersonCameraController.Active?.PunchFieldOfView(
+            isWeakness ? -3.5f : -2f,
+            0.26f);
+    }
+
     public static void BeginUltimate(CombatElement element)
     {
         HitStop.DoSlowMotion(0.18f, 0.06f, 0.28f);
