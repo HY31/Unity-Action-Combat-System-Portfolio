@@ -32,6 +32,7 @@ public sealed class AssaultBattleHUD : MonoBehaviour
     [SerializeField] private Text resultRankText;
     [SerializeField] private Text resultScoreText;
     [SerializeField] private Text resultDamageText;
+    [SerializeField] private Text resultGoalsText;
     [SerializeField] private Image bossImage;
     [SerializeField] private Sprite bossPortrait;
     [SerializeField] private Button exitButton;
@@ -160,6 +161,7 @@ public sealed class AssaultBattleHUD : MonoBehaviour
         wipeoutText = battleWipeoutText;
         bossImage = battleBossImage;
         exitButton = battleExitButton;
+        EnsurePresentationView();
         RefreshAll();
     }
 
@@ -239,7 +241,12 @@ public sealed class AssaultBattleHUD : MonoBehaviour
         SetGroupVisible(resultGroup, finished, finished);
 
         if (finished)
-            UpdateResult(null);
+        {
+            AssaultBattleEndReason? reason = battleController.HasFinalResult
+                ? battleController.FinalEndReason
+                : null;
+            UpdateResult(reason);
+        }
     }
 
     private void OnBattleStarted()
@@ -394,19 +401,40 @@ public sealed class AssaultBattleHUD : MonoBehaviour
         if (battleController == null)
             return;
 
-        int score = Mathf.Max(0, battleController.CurrentScore);
+        bool hasFinalResult = battleController.HasFinalResult;
+        int score = Mathf.Max(
+            0,
+            hasFinalResult
+                ? battleController.FinalScore
+                : battleController.CurrentScore);
+        int damageScore = Mathf.Max(
+            0,
+            hasFinalResult
+                ? battleController.FinalDamageScore
+                : battleController.DamageScore);
+        int operationScore = Mathf.Max(
+            0,
+            hasFinalResult
+                ? battleController.FinalOperationScore
+                : battleController.OperationScore);
+        float elapsedTime = hasFinalResult
+            ? battleController.FinalElapsedTime
+            : battleController.ElapsedTime;
+        AssaultBattleEndReason? resolvedReason = reason;
+        if (!resolvedReason.HasValue && hasFinalResult)
+            resolvedReason = battleController.FinalEndReason;
 
         if (resultReasonText != null)
         {
-            string resultReason = reason == AssaultBattleEndReason.BossDefeated
+            string resultReason = resolvedReason == AssaultBattleEndReason.BossDefeated
                 ? "TARGET DEFEATED"
-                : reason == AssaultBattleEndReason.TimeExpired
+                : resolvedReason == AssaultBattleEndReason.TimeExpired
                     ? "TIME EXPIRED"
-                    : reason == AssaultBattleEndReason.PartyDefeated
+                    : resolvedReason == AssaultBattleEndReason.PartyDefeated
                         ? "SQUAD DEFEATED"
                         : "BATTLE COMPLETE";
             resultReasonText.text =
-                $"{resultReason}  {FormatTime(battleController.ElapsedTime, false)}";
+                $"{resultReason}  {FormatTime(elapsedTime, false)}";
         }
 
         if (resultRankText != null)
@@ -418,9 +446,25 @@ public sealed class AssaultBattleHUD : MonoBehaviour
         if (resultDamageText != null)
         {
             resultDamageText.text =
-                $"DAMAGE SCORE  {battleController.DamageScore:00000}   " +
-                $"OPERATION  {battleController.OperationScore:0000}";
+                $"DAMAGE SCORE  {damageScore:00000}   " +
+                $"OPERATION  {operationScore:0000}";
         }
+
+        if (resultGoalsText != null)
+        {
+            resultGoalsText.text =
+                $"{BuildGoalLine(score, sRankScore)}\n" +
+                $"{BuildGoalLine(score, aRankScore)}\n" +
+                $"{BuildGoalLine(score, bRankScore)}";
+        }
+    }
+
+    private static string BuildGoalLine(int score, int targetScore)
+    {
+        bool achieved = score >= targetScore;
+        string color = achieved ? "E0F51E" : "777C7C";
+        string marker = achieved ? "✓" : "○";
+        return $"<color=#{color}>{marker}  {targetScore:N0}점 달성</color>";
     }
 
     private string EvaluateRank(int score)
@@ -539,6 +583,7 @@ public sealed class AssaultBattleHUD : MonoBehaviour
         }
 
         ArrangeResultPanel(panel);
+        EnsureResultGoalsView(panel);
 
         if (bossImage == null)
         {
@@ -592,6 +637,42 @@ public sealed class AssaultBattleHUD : MonoBehaviour
             exitButton = CreateExitButton(panel);
     }
 
+    private void EnsureResultGoalsView(Transform panel)
+    {
+        if (resultGoalsText == null)
+        {
+            Transform existing = panel.Find("GoalList");
+            if (existing != null)
+                resultGoalsText = existing.GetComponent<Text>();
+        }
+
+        if (resultGoalsText != null)
+            return;
+
+        GameObject goalsObject = new GameObject(
+            "GoalList",
+            typeof(RectTransform),
+            typeof(CanvasRenderer),
+            typeof(Text));
+        goalsObject.transform.SetParent(panel, false);
+        SetRect(
+            goalsObject.GetComponent<RectTransform>(),
+            new Vector2(430f, 105f),
+            new Vector2(-25f, -100f));
+
+        resultGoalsText = goalsObject.GetComponent<Text>();
+        resultGoalsText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        resultGoalsText.fontSize = 21;
+        resultGoalsText.fontStyle = FontStyle.Bold;
+        resultGoalsText.alignment = TextAnchor.UpperLeft;
+        resultGoalsText.color = Color.white;
+        resultGoalsText.raycastTarget = false;
+        resultGoalsText.supportRichText = true;
+        resultGoalsText.horizontalOverflow = HorizontalWrapMode.Wrap;
+        resultGoalsText.verticalOverflow = VerticalWrapMode.Overflow;
+        resultGoalsText.lineSpacing = 1.05f;
+    }
+
     private static void ArrangeResultPanel(Transform panel)
     {
         SetChildRect(panel, "Accent", new Vector2(920f, 9f), new Vector2(0f, 225f));
@@ -600,7 +681,8 @@ public sealed class AssaultBattleHUD : MonoBehaviour
         SetChildRect(panel, "Rank", new Vector2(210f, 230f), new Vector2(-330f, 15f));
         SetChildRect(panel, "Score", new Vector2(400f, 58f), new Vector2(-40f, 60f));
         SetChildRect(panel, "Damage", new Vector2(430f, 42f), new Vector2(-25f, 4f));
-        SetChildRect(panel, "Hint", new Vector2(430f, 30f), new Vector2(-25f, -52f));
+        SetChildRect(panel, "GoalList", new Vector2(430f, 105f), new Vector2(-25f, -100f));
+        SetChildRect(panel, "Hint", new Vector2(430f, 30f), new Vector2(-25f, -185f));
     }
 
     private static void SetChildRect(

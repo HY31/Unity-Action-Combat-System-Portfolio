@@ -47,6 +47,14 @@ public sealed class AssaultBattleController : MonoBehaviour
     [SerializeField] private int currentScore;
     [SerializeField] private bool battleEntryEnabled = true;
 
+    [Header("Final Result")]
+    [SerializeField] private bool hasFinalResult;
+    [SerializeField] private AssaultBattleEndReason finalEndReason;
+    [SerializeField] private float finalElapsedTime;
+    [SerializeField] private int finalDamageScore;
+    [SerializeField] private int finalOperationScore;
+    [SerializeField] private int finalScore;
+
     private bool bossEventsSubscribed;
     private bool partyEventsSubscribed;
     private bool operationEventsSubscribed;
@@ -63,6 +71,12 @@ public sealed class AssaultBattleController : MonoBehaviour
     public int MaximumDamageScore => maximumDamageScore;
     public int MaximumOperationScore => maximumOperationScore;
     public int MaximumTotalScore => maximumDamageScore + maximumOperationScore;
+    public bool HasFinalResult => hasFinalResult;
+    public AssaultBattleEndReason FinalEndReason => finalEndReason;
+    public float FinalElapsedTime => finalElapsedTime;
+    public int FinalDamageScore => finalDamageScore;
+    public int FinalOperationScore => finalOperationScore;
+    public int FinalScore => finalScore;
     public bool CanBeginBattle =>
         state == AssaultBattleState.Waiting && battleEntryEnabled;
 
@@ -147,6 +161,7 @@ public sealed class AssaultBattleController : MonoBehaviour
         damageScore = 0;
         operationScore = 0;
         currentScore = 0;
+        ClearFinalResult();
 
         if (!boss.gameObject.activeSelf)
             boss.gameObject.SetActive(true);
@@ -179,10 +194,17 @@ public sealed class AssaultBattleController : MonoBehaviour
         if (state != AssaultBattleState.Fighting)
             return false;
 
-        state = AssaultBattleState.Finished;
+        // 마지막 피해와 조작 점수를 먼저 확정한 뒤 전투 상태를 닫아 결과가 변하지 않게 한다.
+        RefreshDamageScoreFromBoss();
 
         if (reason == AssaultBattleEndReason.TimeExpired)
+        {
             remainingTime = 0f;
+            elapsedTime = battleDuration;
+        }
+
+        CaptureFinalResult(reason);
+        state = AssaultBattleState.Finished;
 
         RemainingTimeChanged?.Invoke(remainingTime);
         UnsubscribeBossEvents();
@@ -218,6 +240,7 @@ public sealed class AssaultBattleController : MonoBehaviour
         damageScore = 0;
         operationScore = 0;
         currentScore = 0;
+        ClearFinalResult();
         UnsubscribeBossEvents();
         UnsubscribePartyEvents();
         UnsubscribeOperationEvents();
@@ -384,6 +407,26 @@ public sealed class AssaultBattleController : MonoBehaviour
     {
         currentScore = Mathf.Max(0, damageScore + operationScore);
         ScoreChanged?.Invoke(currentScore);
+    }
+
+    private void CaptureFinalResult(AssaultBattleEndReason reason)
+    {
+        hasFinalResult = true;
+        finalEndReason = reason;
+        finalElapsedTime = Mathf.Clamp(elapsedTime, 0f, battleDuration);
+        finalDamageScore = Mathf.Max(0, damageScore);
+        finalOperationScore = Mathf.Max(0, operationScore);
+        finalScore = Mathf.Max(0, currentScore);
+    }
+
+    private void ClearFinalResult()
+    {
+        hasFinalResult = false;
+        finalEndReason = default;
+        finalElapsedTime = 0f;
+        finalDamageScore = 0;
+        finalOperationScore = 0;
+        finalScore = 0;
     }
 
     private void OnBossDefeated(EnemyController defeatedBoss)
