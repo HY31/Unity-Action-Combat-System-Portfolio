@@ -45,6 +45,7 @@ public sealed class AssaultBattleController : MonoBehaviour
     [SerializeField] private int damageScore;
     [SerializeField] private int operationScore;
     [SerializeField] private int currentScore;
+    [SerializeField] private bool battleEntryEnabled = true;
 
     private bool bossEventsSubscribed;
     private bool partyEventsSubscribed;
@@ -62,6 +63,8 @@ public sealed class AssaultBattleController : MonoBehaviour
     public int MaximumDamageScore => maximumDamageScore;
     public int MaximumOperationScore => maximumOperationScore;
     public int MaximumTotalScore => maximumDamageScore + maximumOperationScore;
+    public bool CanBeginBattle =>
+        state == AssaultBattleState.Waiting && battleEntryEnabled;
 
     public float DamageProgressNormalized =>
         boss == null || boss.MaxHp <= 0f
@@ -127,7 +130,7 @@ public sealed class AssaultBattleController : MonoBehaviour
 
     public bool BeginBattle()
     {
-        if (state != AssaultBattleState.Waiting)
+        if (!CanBeginBattle)
             return false;
 
         ResolveBoss();
@@ -163,6 +166,12 @@ public sealed class AssaultBattleController : MonoBehaviour
         RemainingTimeChanged?.Invoke(remainingTime);
         ScoreChanged?.Invoke(currentScore);
         return true;
+    }
+
+    public void SetBattleEntryEnabled(bool entryEnabled)
+    {
+        // 오프닝은 탐색 허용 시점만 제어하고, 실제 전투 시작은 맵의 시작 트리거가 계속 담당한다.
+        battleEntryEnabled = entryEnabled;
     }
 
     public bool FinishBattle(AssaultBattleEndReason reason)

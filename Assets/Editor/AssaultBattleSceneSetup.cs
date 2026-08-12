@@ -39,6 +39,11 @@ public static class AssaultBattleSceneSetup
         battleController.Configure(boss, 180f, 60000, true);
         battleController.ConfigureOperationScores(50, 100, 200, 5000);
 
+        PartyManager partyManager = Object.FindFirstObjectByType<PartyManager>();
+        AssaultBattleIntro battleIntro =
+            GetOrAddComponent<AssaultBattleIntro>(root);
+        battleIntro.Configure(battleController, partyManager);
+
         // 전투 관리자 루트에 남아 있는 화면 없는 HUD는 중복 이벤트 구독을 막기 위해 제거한다.
         AssaultBattleHUD headlessHud = root.GetComponent<AssaultBattleHUD>();
         if (headlessHud != null)
@@ -79,6 +84,7 @@ public static class AssaultBattleSceneSetup
         startTrigger.Configure(battleController);
 
         EditorUtility.SetDirty(battleController);
+        EditorUtility.SetDirty(battleIntro);
         if (battleHud != null)
             EditorUtility.SetDirty(battleHud);
         EditorUtility.SetDirty(triggerCollider);
@@ -87,7 +93,7 @@ public static class AssaultBattleSceneSetup
 
         EditorSceneManager.MarkSceneDirty(scene);
         EditorSceneManager.SaveScene(scene);
-        Debug.Log("강습전 코어 설치 완료: 트리거, 보스 활성화, 3분 타이머, 피해 점수를 연결했습니다.");
+        Debug.Log("강습전 코어 설치 완료: 오프닝, 탐색 잠금, 시작 트리거, 보스 활성화, 3분 타이머를 연결했습니다.");
     }
 
     private static Scene ResolveSampleScene()

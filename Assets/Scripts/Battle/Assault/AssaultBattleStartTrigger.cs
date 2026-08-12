@@ -22,6 +22,17 @@ public sealed class AssaultBattleStartTrigger : MonoBehaviour
 
     private void OnTriggerEnter(Collider other)
     {
+        TryBeginBattle(other);
+    }
+
+    private void OnTriggerStay(Collider other)
+    {
+        // 영상 재생 중 트리거 안에 머물렀더라도 오프닝이 끝난 뒤 다시 시작을 시도한다.
+        TryBeginBattle(other);
+    }
+
+    private void TryBeginBattle(Collider other)
+    {
         if (triggered)
             return;
 
