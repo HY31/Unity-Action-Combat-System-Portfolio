@@ -2,6 +2,9 @@ using DG.Tweening;
 using UnityEngine;
 using UnityEngine.UI;
 
+/// <summary>
+/// 월드 적중 지점을 화면 좌표로 변환해 대미지 숫자를 생성하고 짧은 이동·소멸 연출을 재생한다.
+/// </summary>
 [DisallowMultipleComponent]
 public sealed class CombatDamageNumberUI : MonoBehaviour
 {
@@ -101,7 +104,7 @@ public sealed class CombatDamageNumberUI : MonoBehaviour
             return;
         }
 
-        // Spread consecutive hits without consuming UnityEngine.Random state.
+        // 전투 난수에 영향을 주지 않도록 고정된 레인 순서로 연속 타격 숫자를 흩뿌린다.
         int lane = spawnSequence++ % 5;
         float horizontalOffset = (lane - 2) * 24f;
         float verticalOffset = (lane % 2) * 12f;

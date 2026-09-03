@@ -1,6 +1,10 @@
 using System;
 using UnityEngine;
 
+/// <summary>
+/// 씬의 전투 데이터 원본과 각 HUD 뷰를 연결하고, 캐릭터 교체나 보스 생성 때 바인딩을 갱신한다.
+/// 씬 종속 참조가 비어 있으면 비활성 오브젝트까지 검색해 런타임에 복구한다.
+/// </summary>
 [DefaultExecutionOrder(100)]
 [DisallowMultipleComponent]
 public sealed class UIManager : MonoBehaviour
@@ -11,6 +15,9 @@ public sealed class UIManager : MonoBehaviour
     [Header("HUD Views")]
     [SerializeField] private PartyStatusUI partyStatusUI;
     [SerializeField] private ChainSkillPromptUI chainSkillPromptUI;
+    [SerializeField] private EnemyWorldStatusUI enemyStatusUI;
+    [SerializeField] private AssaultBattleHUD assaultBattleHUD;
+    [SerializeField] private CombatActionHUD combatActionHUD;
 
     [Header("Fallback")]
     [SerializeField] private bool autoFindReferences = true;
@@ -19,6 +26,8 @@ public sealed class UIManager : MonoBehaviour
     private PlayerController[] boundMembers = Array.Empty<PlayerController>();
     private SupportPointManager boundSupportPointManager;
     private ChainSkillPromptUI boundChainSkillPromptUI;
+    private EnemyController boundEnemy;
+    private AssaultBattleController boundAssaultBattleController;
     private static UIManager activeInstance;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
@@ -65,10 +74,15 @@ public sealed class UIManager : MonoBehaviour
         if (boundPartyManager != partyManager ||
             boundSupportPointManager != partyManager.SupportPointManager ||
             boundChainSkillPromptUI != chainSkillPromptUI ||
+            boundEnemy != ResolveBattleEnemy() ||
+            boundAssaultBattleController != FindFirstObjectByType<AssaultBattleController>() ||
             !AreSameMembers(boundMembers, partyManager.partyMembers))
         {
             BindDataSources();
         }
+
+        // 이벤트를 거치지 않고 값이 바뀌는 외부 시스템까지 반영하도록 마지막에 화면을 동기화한다.
+        RefreshAll();
     }
 
     private void OnDisable()
@@ -88,6 +102,7 @@ public sealed class UIManager : MonoBehaviour
     public void RefreshAll()
     {
         partyStatusUI?.RefreshNow();
+        combatActionHUD?.RefreshNow();
     }
 
     private void TryBind()
@@ -104,10 +119,29 @@ public sealed class UIManager : MonoBehaviour
                 partyManager = FindFirstObjectByType<PartyManager>();
 
             if (partyStatusUI == null)
-                partyStatusUI = FindFirstObjectByType<PartyStatusUI>();
+                partyStatusUI = FindFirstObjectByType<PartyStatusUI>(
+                    FindObjectsInactive.Include);
 
             if (chainSkillPromptUI == null)
-                chainSkillPromptUI = FindFirstObjectByType<ChainSkillPromptUI>();
+                chainSkillPromptUI = FindFirstObjectByType<ChainSkillPromptUI>(
+                    FindObjectsInactive.Include);
+
+            if (enemyStatusUI == null)
+                enemyStatusUI = FindFirstObjectByType<EnemyWorldStatusUI>(
+                    FindObjectsInactive.Include);
+
+            if (assaultBattleHUD == null)
+                assaultBattleHUD = FindFirstObjectByType<AssaultBattleHUD>(
+                    FindObjectsInactive.Include);
+
+            if (combatActionHUD == null)
+                combatActionHUD = FindFirstObjectByType<CombatActionHUD>(
+                    FindObjectsInactive.Include);
+
+            // 콤보 UI는 평소 CanvasGroup으로 숨기며 GameObject 자체는 활성 상태여야
+            // EnemyController의 콤보 요청 이벤트를 OnEnable에서 구독할 수 있다.
+            if (chainSkillPromptUI != null && !chainSkillPromptUI.gameObject.activeSelf)
+                chainSkillPromptUI.gameObject.SetActive(true);
         }
 
         return partyManager != null && partyStatusUI != null;
@@ -149,6 +183,8 @@ public sealed class UIManager : MonoBehaviour
         }
 
         partyStatusUI.Bind(partyManager);
+        combatActionHUD?.Bind(partyManager);
+        BindBattleViews();
         foreach (PlayerController member in boundMembers)
         {
             if (member != null)
@@ -182,6 +218,8 @@ public sealed class UIManager : MonoBehaviour
         boundPartyManager = null;
         boundSupportPointManager = null;
         boundChainSkillPromptUI = null;
+        boundEnemy = null;
+        boundAssaultBattleController = null;
         boundMembers = Array.Empty<PlayerController>();
     }
 
@@ -218,6 +256,27 @@ public sealed class UIManager : MonoBehaviour
 
         if (!executed)
             enemy?.CancelChainSkillSequence();
+    }
+
+    private void BindBattleViews()
+    {
+        boundAssaultBattleController = FindFirstObjectByType<AssaultBattleController>();
+        boundEnemy = ResolveBattleEnemy();
+
+        if (enemyStatusUI != null)
+            enemyStatusUI.Bind(boundEnemy);
+
+        if (assaultBattleHUD != null && boundAssaultBattleController != null)
+            assaultBattleHUD.Configure(boundAssaultBattleController);
+    }
+
+    private static EnemyController ResolveBattleEnemy()
+    {
+        AssaultBattleController battle = FindFirstObjectByType<AssaultBattleController>();
+        if (battle != null && battle.Boss != null)
+            return battle.Boss;
+
+        return FindFirstObjectByType<EnemyController>(FindObjectsInactive.Include);
     }
 
     private static bool AreSameMembers(PlayerController[] left, PlayerController[] right)

@@ -1,4 +1,4 @@
-﻿using UnityEngine;
+using UnityEngine;
 using UnityEngine.UI;
 
 /// <summary>
@@ -66,6 +66,15 @@ public sealed class EnemyWorldStatusUI : MonoBehaviour
         }
 
         if (targetEnemy == null || hpFill == null || stunFill == null || worldAnchor == null)
+        {
+            if (visualRoot != null)
+                visualRoot.SetActive(false);
+
+            return;
+        }
+
+        // 월드 UI는 별도 Canvas에 있으므로 보스 본체의 활성 상태를 직접 따라가야 한다.
+        if (!targetEnemy.gameObject.activeInHierarchy)
         {
             if (visualRoot != null)
                 visualRoot.SetActive(false);
@@ -150,6 +159,11 @@ public sealed class EnemyWorldStatusUI : MonoBehaviour
         anomalyFill = anomalyGauge;
         anomalyIcon = anomalyElementIcon;
     }
+    public void ConfigureAnomalyIcons(ElementIconEntry[] icons)
+    {
+        anomalyIcons = icons;
+    }
+
 
     private void UpdateAnomalyVisual()
     {
@@ -170,7 +184,7 @@ public sealed class EnemyWorldStatusUI : MonoBehaviour
             anomalyFill.type = Image.Type.Filled;
             anomalyFill.fillMethod = Image.FillMethod.Radial360;
             anomalyFill.fillOrigin = (int)Image.Origin360.Top;
-            anomalyFill.fillClockwise = false;
+            anomalyFill.fillClockwise = true;
             anomalyFill.fillAmount = normalized;
             anomalyFill.color = elementColor;
         }
@@ -178,6 +192,7 @@ public sealed class EnemyWorldStatusUI : MonoBehaviour
         if (anomalyIcon == null)
             return;
 
+        bool iconResolved = false;
         if (anomalyIcons != null)
         {
             for (int i = 0; i < anomalyIcons.Length; i++)
@@ -186,12 +201,13 @@ public sealed class EnemyWorldStatusUI : MonoBehaviour
                     continue;
 
                 anomalyIcon.sprite = anomalyIcons[i].sprite;
+                iconResolved = true;
                 break;
             }
         }
 
-        anomalyIcon.enabled = true;
-        anomalyIcon.color = Color.Lerp(Color.white, elementColor, 0.35f);
+        anomalyIcon.enabled = iconResolved;
+        anomalyIcon.color = elementColor;
     }
 
     private static Color ResolveAnomalyColor(CombatElement element)

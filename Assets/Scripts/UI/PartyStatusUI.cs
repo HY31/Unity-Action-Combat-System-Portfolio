@@ -20,6 +20,7 @@ public sealed class PartyStatusUI : MonoBehaviour
         public Image energyFill;
         public RectTransform energyThresholdMarker;
         public Text healthText;
+        public Image ultimateReadyIndicator;
     }
 
     [Serializable]
@@ -34,6 +35,7 @@ public sealed class PartyStatusUI : MonoBehaviour
     [Header("Data")]
     [SerializeField] private PartyManager partyManager;
     [SerializeField] private Sprite[] memberPortraits;
+    [SerializeField] private Sprite[] memberChainPortraits;
 
     [Header("Views")]
     [SerializeField] private SlotView activeSlot;
@@ -47,10 +49,15 @@ public sealed class PartyStatusUI : MonoBehaviour
     [SerializeField] private Color energyMarkerReadyColor = new Color32(225, 25, 48, 255);
     [SerializeField, Range(0f, 1f)] private float fallbackReadyThreshold = 0.5f;
 
+    [Header("Defeated State")]
+    [SerializeField] private Color defeatedPortraitColor = new Color32(78, 78, 78, 255);
+
     [Header("Combat Resources")]
     [SerializeField] private Color decibelNormalColor = new Color32(65, 190, 255, 255);
     [SerializeField] private Color decibelReadyColor = new Color32(255, 191, 22, 255);
     [SerializeField] private Color supportPointEmptyColor = new Color32(49, 54, 54, 210);
+    [SerializeField] private Color ultimateIndicatorReadyColor = new Color32(255, 153, 18, 255);
+    [SerializeField] private Color ultimateIndicatorUnavailableColor = new Color32(72, 77, 77, 255);
 
     private float[] healthNormalized;
     private float[] healthCurrent;
@@ -60,11 +67,13 @@ public sealed class PartyStatusUI : MonoBehaviour
     private PlayerController lastActiveMember;
     private bool activeMemberInitialized;
 
-    public void Bind(PartyManager manager, Sprite[] portraits = null)
+    public void Bind(PartyManager manager, Sprite[] portraits = null, Sprite[] chainPortraits = null)
     {
         partyManager = manager;
         if (portraits != null)
             memberPortraits = portraits;
+        if (chainPortraits != null)
+            memberChainPortraits = chainPortraits;
 
         EnsureHealthCache(true);
         ConfigureEnergyImages();
@@ -84,6 +93,11 @@ public sealed class PartyStatusUI : MonoBehaviour
         combatResources = resources;
         ConfigureEnergyImages();
         RefreshNow();
+    }
+
+    public void ConfigureChainPortraits(Sprite[] portraits)
+    {
+        memberChainPortraits = portraits;
     }
 
     public void SetMemberHealth(PlayerController member, float current, float maximum)
@@ -108,6 +122,19 @@ public sealed class PartyStatusUI : MonoBehaviour
             : null;
     }
 
+    public Sprite GetChainPortrait(PlayerController member)
+    {
+        int index = IndexOf(member);
+        if (index >= 0 && memberChainPortraits != null && index < memberChainPortraits.Length)
+        {
+            Sprite portrait = memberChainPortraits[index];
+            if (portrait != null)
+                return portrait;
+        }
+
+        return GetPortrait(member);
+    }
+
     public Sprite GetNextPortrait()
     {
         return partyManager != null ? GetPortrait(partyManager.GetNextCharacter()) : null;
@@ -116,6 +143,16 @@ public sealed class PartyStatusUI : MonoBehaviour
     public Sprite GetPreviousPortrait()
     {
         return partyManager != null ? GetPortrait(partyManager.GetPreviousCharacter()) : null;
+    }
+
+    public Sprite GetNextChainPortrait()
+    {
+        return partyManager != null ? GetChainPortrait(partyManager.GetNextCharacter()) : null;
+    }
+
+    public Sprite GetPreviousChainPortrait()
+    {
+        return partyManager != null ? GetChainPortrait(partyManager.GetPreviousCharacter()) : null;
     }
 
     private void Refresh()
@@ -140,8 +177,8 @@ public sealed class PartyStatusUI : MonoBehaviour
 
         PlayerController[] orderedReserve =
         {
-            partyManager.GetNextCharacter(),
-            partyManager.GetPreviousCharacter()
+            GetRelativePartyMember(active, 1),
+            GetRelativePartyMember(active, -1)
         };
 
         for (int i = 0; i < reserveSlots.Length; i++)
@@ -173,16 +210,16 @@ public sealed class PartyStatusUI : MonoBehaviour
         if (!visible)
             return;
 
-        int memberIndex = IndexOf(member);
-        float hpNormalized = GetHealthNormalized(memberIndex);
-        float currentHp = GetCurrentHealth(memberIndex, member);
-        float maxHp = GetMaximumHealth(memberIndex, member);
+        float hpNormalized = member.CurrentHpNormalized;
+        float currentHp = member.CurrentHp;
+        float maxHp = member.CurrentMaxHp;
 
         if (slot.portrait != null)
         {
             Sprite portrait = GetPortrait(member);
             if (portrait != null)
                 slot.portrait.sprite = portrait;
+            slot.portrait.color = member.IsDefeated ? defeatedPortraitColor : Color.white;
         }
 
         if (slot.healthFill != null)
@@ -194,11 +231,20 @@ public sealed class PartyStatusUI : MonoBehaviour
             slot.healthText.text = $"{Mathf.RoundToInt(currentHp)} / {Mathf.RoundToInt(maxHp)}";
         }
 
+        Image ultimateIndicator = ResolveUltimateReadyIndicator(slot);
+        if (ultimateIndicator != null)
+        {
+            bool ultimateReady = !member.IsDefeated && member.CanUseUltimate;
+            ultimateIndicator.color = ultimateReady
+                ? ultimateIndicatorReadyColor
+                : ultimateIndicatorUnavailableColor;
+        }
+
         float energyNormalized = member.MaxEnergy > 0f
             ? Mathf.Clamp01(member.CurrentEnergy / member.MaxEnergy)
             : 0f;
         float threshold = ResolveEnergyThreshold(member);
-        bool enhancedReady = energyNormalized >= threshold;
+        bool enhancedReady = !member.IsDefeated && member.IsEnhancedBranchReady;
         bool hadReadyState = energyReadyStates.TryGetValue(member, out bool wasReady);
         energyReadyStates[member] = enhancedReady;
 
@@ -329,11 +375,10 @@ public sealed class PartyStatusUI : MonoBehaviour
         if (member == null || member.MaxEnergy <= 0f || member.CharacterData == null)
             return fallbackReadyThreshold;
 
-        SkillData enhanced = member.CharacterData.enhancedSkillBranch;
-        if (enhanced == null)
+        if (member.CharacterData.enhancedSkillBranch == null)
             return fallbackReadyThreshold;
 
-        return Mathf.Clamp01(enhanced.requiredEntryEnergy / member.MaxEnergy);
+        return Mathf.Clamp01(member.EnhancedSkillEnergyRequirement / member.MaxEnergy);
     }
 
     private void ConfigureEnergyImages()
@@ -356,6 +401,41 @@ public sealed class PartyStatusUI : MonoBehaviour
         slot.energyFill.fillMethod = Image.FillMethod.Horizontal;
         slot.energyFill.fillOrigin = (int)Image.OriginHorizontal.Left;
         slot.energyFill.fillClockwise = true;
+    }
+
+    private static Image ResolveUltimateReadyIndicator(SlotView slot)
+    {
+        if (slot == null || slot.ultimateReadyIndicator != null)
+            return slot?.ultimateReadyIndicator;
+
+        Transform slotRoot = slot.root != null ? slot.root.transform : null;
+        if (slotRoot == null)
+            return null;
+
+        Transform indicator = slotRoot.Find("UltimateReadyIndicator");
+        if (indicator == null)
+            indicator = slotRoot.Find("SwapReadyIcon");
+
+        slot.ultimateReadyIndicator = indicator != null
+            ? indicator.GetComponent<Image>()
+            : null;
+        return slot.ultimateReadyIndicator;
+    }
+    private PlayerController GetRelativePartyMember(PlayerController active, int offset)
+    {
+        PlayerController[] members = partyManager != null ? partyManager.partyMembers : null;
+        if (members == null || members.Length == 0 || active == null)
+            return null;
+
+        int activeIndex = Array.IndexOf(members, active);
+        if (activeIndex < 0)
+            return null;
+
+        int relativeIndex = (activeIndex + offset) % members.Length;
+        if (relativeIndex < 0)
+            relativeIndex += members.Length;
+
+        return members[relativeIndex];
     }
 
     private int IndexOf(PlayerController member)

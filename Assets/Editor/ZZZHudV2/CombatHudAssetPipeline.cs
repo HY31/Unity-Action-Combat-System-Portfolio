@@ -66,6 +66,7 @@ internal static class CombatHudPrefabBuilder
         GameObject chain = BuildChainPromptPrefab();
         GameObject assault = BuildAssaultBattlePrefab();
         BuildDemoCanvas(player, enemy, chain, assault);
+        CombatHudLayoutUpgrader.UpgradeAll();
 
         AssetDatabase.SaveAssets();
         AssetDatabase.Refresh();
@@ -124,9 +125,12 @@ internal static class CombatHudPrefabBuilder
         Sprite marker = LoadSprite("energy_threshold_marker");
         Sprite reserveSwapIcon = LoadSprite("reserve_swap_icon");
         Sprite emblem = LoadSprite("party_emblem");
-        Sprite portraitA = LoadSprite("portrait_placeholder_a");
-        Sprite portraitB = LoadSprite("portrait_placeholder_b");
-        Sprite portraitC = LoadSprite("portrait_placeholder_c");
+        Sprite portraitA = LoadSprite("ellen_health_portrait");
+        Sprite portraitB = LoadSprite("jane_health_portrait");
+        Sprite portraitC = LoadSprite("corin_health_portrait");
+        Sprite chainPortraitA = LoadSprite("ellen_chain_portrait");
+        Sprite chainPortraitB = LoadSprite("jane_chain_portrait");
+        Sprite chainPortraitC = LoadSprite("corin_chain_portrait");
 
         GameObject root = CreateUiObject("ZZZ_PlayerPartyHUD", null);
         SetRect(root, new Vector2(878f, 60f), Vector2.zero);
@@ -183,6 +187,7 @@ internal static class CombatHudPrefabBuilder
             active,
             new[] { reserveOne, reserveTwo },
             new[] { portraitA, portraitB, portraitC }, resources);
+        hud.ConfigureChainPortraits(new[] { chainPortraitA, chainPortraitB, chainPortraitC });
 
         GameObject saved = PrefabUtility.SaveAsPrefabAsset(root, PlayerPrefabPath);
         UnityEngine.Object.DestroyImmediate(root);
@@ -330,7 +335,8 @@ internal static class CombatHudPrefabBuilder
             healthFill = health.fill,
             energyFill = energy.fill,
             energyThresholdMarker = energy.marker,
-            healthText = null
+            healthText = null,
+            ultimateReadyIndicator = swapReady
         };
     }
     private static PartyStatusUI.ResourceView BuildCombatResourceView(
@@ -351,6 +357,7 @@ internal static class CombatHudPrefabBuilder
             null);
         decibel.fill.color = new Color32(65, 190, 255, 255);
         decibel.fill.fillAmount = 0f;
+        decibel.root.SetActive(false);
 
         Text decibelText = CreateText(
             "DecibelText",
@@ -362,6 +369,7 @@ internal static class CombatHudPrefabBuilder
             Color.white);
         SetRect(decibelText.gameObject, new Vector2(92f, 18f), new Vector2(-28f, -39f));
         AddTextOutline(decibelText, new Vector2(1f, -1f));
+        decibelText.gameObject.SetActive(false);
 
         Image[] supportPips = new Image[6];
         for (int i = 0; i < supportPips.Length; i++)
@@ -391,8 +399,19 @@ internal static class CombatHudPrefabBuilder
         Sprite frameSprite = LoadSprite("enemy_compact_frame");
         Sprite hpSprite = LoadSprite("enemy_hp_fill");
         Sprite stunSprite = LoadSprite("enemy_stun_fill");
-        Sprite anomalySprite = LoadSprite("anomaly_icon_frame");
+        Sprite anomalyBackSprite = LoadElementSprite("anomaly_disc_back");
+        Sprite anomalyRingSprite = LoadElementSprite("anomaly_ring_fill");
+        Sprite anomalyFrameSprite = LoadElementSprite("anomaly_ring_frame");
+        ElementIconEntry[] anomalyIcons =
+        {
+            CreateElementIconEntry(CombatElement.Fire, LoadElementSprite("anomaly_fire")),
+            CreateElementIconEntry(CombatElement.Ice, LoadElementSprite("anomaly_ice")),
+            CreateElementIconEntry(CombatElement.Physical, LoadElementSprite("anomaly_physical")),
+            CreateElementIconEntry(CombatElement.Electric, LoadElementSprite("anomaly_electric")),
+            CreateElementIconEntry(CombatElement.Wind, LoadElementSprite("anomaly_wind")),
+            CreateElementIconEntry(CombatElement.Ether, LoadElementSprite("anomaly_ether"))
 
+        };
         GameObject root = CreateUiObject("ZZZ_EnemyWorldHUD", null);
         SetRect(root, new Vector2(166f, 64f), Vector2.zero);
 
@@ -433,18 +452,23 @@ internal static class CombatHudPrefabBuilder
 
         GameObject anomalyRoot = CreateUiObject("AnomalyIcon", visuals.transform);
         SetRect(anomalyRoot, new Vector2(44f, 44f), new Vector2(59f, 15f));
-        Image anomalyFill = CreateImage("AnomalyFill", anomalyRoot.transform, anomalySprite, new Color32(165, 92, 255, 255));
-        Stretch(anomalyFill.rectTransform, new Vector4(5f, 5f, 5f, 5f));
+        Image anomalyBack = CreateImage("AnomalyBack", anomalyRoot.transform, anomalyBackSprite, Color.white);
+        Stretch(anomalyBack.rectTransform);
+        Image anomalyFill = CreateImage("AnomalyFill", anomalyRoot.transform, anomalyRingSprite, new Color32(165, 92, 255, 255));
+        Stretch(anomalyFill.rectTransform, new Vector4(3f, 3f, 3f, 3f));
         anomalyFill.type = Image.Type.Filled;
         anomalyFill.fillMethod = Image.FillMethod.Radial360;
         anomalyFill.fillOrigin = (int)Image.Origin360.Top;
-        anomalyFill.fillClockwise = false;
+        anomalyFill.fillClockwise = true;
         anomalyFill.fillAmount = 0f;
-        Image anomalyFrame = CreateImage("AnomalyFrame", anomalyRoot.transform, anomalySprite, Color.white);
+        Image anomalyFrame = CreateImage("AnomalyFrame", anomalyRoot.transform, anomalyFrameSprite, Color.white);
         Stretch(anomalyFrame.rectTransform);
+        Image anomalyIcon = CreateImage("ElementIcon", anomalyRoot.transform, anomalyIcons[5].sprite, Color.white);
+        SetRect(anomalyIcon.gameObject, new Vector2(19f, 19f), Vector2.zero);
 
         EnemyWorldStatusUI hud = root.AddComponent<EnemyWorldStatusUI>();
-        hud.Configure(health, stun, stunPercent, damageMultiplier, visuals, anomalyRoot, anomalyFill, anomalyFrame);
+        hud.Configure(health, stun, stunPercent, damageMultiplier, visuals, anomalyRoot, anomalyFill, anomalyIcon);
+        hud.ConfigureAnomalyIcons(anomalyIcons);
         hud.ConfigureAutoTarget("Enemy", new Vector3(0f, 1.7f, 0f));
 
         GameObject saved = PrefabUtility.SaveAsPrefabAsset(root, EnemyPrefabPath);
@@ -458,8 +482,8 @@ internal static class CombatHudPrefabBuilder
         Sprite portraitFrameSprite = LoadSprite("chain_portrait_frame");
         Sprite trackFrameSprite = LoadSprite("chain_track_frame");
         Sprite segmentSprite = LoadSprite("chain_segment_fill");
-        Sprite leftSprite = LoadSprite("portrait_placeholder_b");
-        Sprite rightSprite = LoadSprite("portrait_placeholder_c");
+        Sprite leftSprite = LoadSprite("jane_chain_portrait");
+        Sprite rightSprite = LoadSprite("corin_chain_portrait");
 
         GameObject root = CreateUiObject("ZZZ_ChainSkillPrompt", null);
         SetRect(root, new Vector2(1920f, 1080f), Vector2.zero);
@@ -843,6 +867,10 @@ internal static class CombatHudPrefabBuilder
             scoreText,
             damageText,
             scoreFill,
+            null,
+            null,
+            null,
+            null,
             resultGroup,
             resultReasonText,
             rankText,
@@ -1038,6 +1066,24 @@ internal static class CombatHudPrefabBuilder
         return sprite;
     }
 
+    private static Sprite LoadElementSprite(string name)
+    {
+        string path = $"{SpriteRoot}/Elements/{name}.png";
+        Sprite sprite = AssetDatabase.LoadAssetAtPath<Sprite>(path);
+        if (sprite != null)
+            return sprite;
+
+        AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceSynchronousImport);
+        sprite = AssetDatabase.LoadAssetAtPath<Sprite>(path);
+        if (sprite == null)
+            throw new InvalidOperationException($"Element anomaly sprite not found: {path}");
+        return sprite;
+    }
+
+    private static ElementIconEntry CreateElementIconEntry(CombatElement element, Sprite sprite)
+    {
+        return new ElementIconEntry { element = element, sprite = sprite };
+    }
     private static void ReimportSprites()
     {
         string[] guids = AssetDatabase.FindAssets("t:Texture2D", new[] { SpriteRoot });
