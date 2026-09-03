@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Events;
 using UnityEngine.InputSystem;
@@ -11,6 +12,15 @@ using DG.Tweening;
 [DisallowMultipleComponent]
 public sealed class ChainSkillPromptUI : MonoBehaviour
 {
+    private struct SiblingUiState
+    {
+        public CanvasGroup group;
+        public bool enabled;
+        public float alpha;
+        public bool interactable;
+        public bool blocksRaycasts;
+    }
+
     [Header("Views")]
     [SerializeField] private CanvasGroup canvasGroup;
     [SerializeField] private Image leftPortrait;
@@ -19,7 +29,7 @@ public sealed class ChainSkillPromptUI : MonoBehaviour
     [SerializeField] private Text timerText;
 
     [Header("Behaviour")]
-    [SerializeField, Min(0.1f)] private float defaultDuration = 2.5f;
+    [SerializeField, Min(0.1f)] private float defaultDuration = 3f;
     [SerializeField] private bool hideOnAwake = true;
     [SerializeField] private KeyCode leftKey = KeyCode.Q;
     [SerializeField] private KeyCode rightKey = KeyCode.E;
@@ -35,6 +45,8 @@ public sealed class ChainSkillPromptUI : MonoBehaviour
     private Tween visibilityTween;
     private EnemyController requestedEnemy;
     private int inputReadyFrame;
+    private Image rightTimeFill;
+    private readonly List<SiblingUiState> hiddenSiblingUis = new();
     private static int openPromptCount;
 
     public bool IsOpen => isOpen;
@@ -43,6 +55,8 @@ public sealed class ChainSkillPromptUI : MonoBehaviour
 
     private void Awake()
     {
+        ConfigureCenteredTimeFill();
+
         if (hideOnAwake)
             HideImmediate();
     }
@@ -98,6 +112,7 @@ public sealed class ChainSkillPromptUI : MonoBehaviour
         if (rightPortrait != null && right != null)
             rightPortrait.sprite = right;
 
+        HideOtherHud();
         SetCanvasVisible(true);
         RefreshTime();
         PlayShowAnimation();
@@ -141,6 +156,7 @@ public sealed class ChainSkillPromptUI : MonoBehaviour
         rightPortrait = right;
         timeFill = progress;
         timerText = timer;
+        ConfigureCenteredTimeFill();
     }
 
     private void HandleChainSkillRequested(EnemyController enemy, PlayerController attacker)
@@ -149,8 +165,8 @@ public sealed class ChainSkillPromptUI : MonoBehaviour
 
         // 파티 순서를 소유한 UI에서 이전/다음 캐릭터 초상화만 가져온다.
         PartyStatusUI partyHud = FindFirstObjectByType<PartyStatusUI>();
-        Sprite left = partyHud != null ? partyHud.GetPreviousPortrait() : null;
-        Sprite right = partyHud != null ? partyHud.GetNextPortrait() : null;
+        Sprite left = partyHud != null ? partyHud.GetPreviousChainPortrait() : null;
+        Sprite right = partyHud != null ? partyHud.GetNextChainPortrait() : null;
         Show(defaultDuration, left, right);
     }
 
@@ -159,6 +175,8 @@ public sealed class ChainSkillPromptUI : MonoBehaviour
         float normalized = duration > 0f ? remaining / duration : 0f;
         if (timeFill != null)
             timeFill.fillAmount = normalized;
+        if (rightTimeFill != null)
+            rightTimeFill.fillAmount = normalized;
 
         if (timerText != null)
         {
@@ -167,6 +185,40 @@ public sealed class ChainSkillPromptUI : MonoBehaviour
             int centiseconds = totalCentiseconds % 100;
             timerText.text = $"00:{seconds:00}:{centiseconds:00}";
         }
+    }
+
+    private void ConfigureCenteredTimeFill()
+    {
+        if (timeFill == null || rightTimeFill != null)
+            return;
+
+        RectTransform leftRect = timeFill.rectTransform;
+        Vector2 fullSize = leftRect.sizeDelta;
+        Vector2 fullPosition = leftRect.anchoredPosition;
+        float halfWidth = fullSize.x * 0.5f;
+
+        if (halfWidth <= 0f)
+            return;
+
+        // 하나의 전체 게이지를 좌우 절반으로 나누고, 양쪽 바깥 끝이 중앙을 향해 줄어들게 한다.
+        leftRect.sizeDelta = new Vector2(halfWidth, fullSize.y);
+        leftRect.anchoredPosition = fullPosition + Vector2.left * (halfWidth * 0.5f);
+        ConfigureHorizontalFill(timeFill, Image.OriginHorizontal.Right);
+
+        rightTimeFill = Instantiate(timeFill, leftRect.parent);
+        rightTimeFill.name = $"{timeFill.name}_Right";
+
+        RectTransform rightRect = rightTimeFill.rectTransform;
+        rightRect.anchoredPosition = fullPosition + Vector2.right * (halfWidth * 0.5f);
+        rightRect.SetSiblingIndex(leftRect.GetSiblingIndex() + 1);
+        ConfigureHorizontalFill(rightTimeFill, Image.OriginHorizontal.Left);
+    }
+
+    private static void ConfigureHorizontalFill(Image fill, Image.OriginHorizontal origin)
+    {
+        fill.type = Image.Type.Filled;
+        fill.fillMethod = Image.FillMethod.Horizontal;
+        fill.fillOrigin = (int)origin;
     }
 
     private void PlayShowAnimation()
@@ -197,7 +249,10 @@ public sealed class ChainSkillPromptUI : MonoBehaviour
         CombatPresentationEffects.EndChainPrompt();
 
         if (canvasGroup == null)
+        {
+            RestoreOtherHud();
             return;
+        }
 
         canvasGroup.interactable = false;
         canvasGroup.blocksRaycasts = false;
@@ -213,10 +268,12 @@ public sealed class ChainSkillPromptUI : MonoBehaviour
             {
                 canvasGroup.transform.localScale = Vector3.one;
                 SetCanvasVisible(false);
+                RestoreOtherHud();
             });
     }
     private void HideImmediate()
     {
+        EnemyController enemy = requestedEnemy;
         bool wasOpen = isOpen;
         if (wasOpen)
             openPromptCount = Mathf.Max(0, openPromptCount - 1);
@@ -231,9 +288,14 @@ public sealed class ChainSkillPromptUI : MonoBehaviour
             canvasGroup.transform.localScale = Vector3.one;
 
         SetCanvasVisible(false);
+        RestoreOtherHud();
 
         if (wasOpen)
+        {
+            // 비활성화로 UI가 강제로 닫혀도 적의 콤보 대기 상태와 그로기 정지가 남지 않게 한다.
+            enemy?.CancelChainSkillSequence();
             CombatPresentationEffects.EndChainPrompt();
+        }
     }
 
     private void SetCanvasVisible(bool visible)
@@ -244,5 +306,69 @@ public sealed class ChainSkillPromptUI : MonoBehaviour
         canvasGroup.alpha = visible ? 1f : 0f;
         canvasGroup.interactable = visible;
         canvasGroup.blocksRaycasts = visible;
+    }
+
+    private void HideOtherHud()
+    {
+        if (hiddenSiblingUis.Count > 0 || transform.parent == null)
+            return;
+
+        Transform parent = transform.parent;
+        for (int index = 0; index < parent.childCount; index++)
+        {
+            Transform sibling = parent.GetChild(index);
+            if (sibling == transform)
+                continue;
+
+            HideHudObject(sibling.gameObject);
+        }
+
+    }
+
+    private void HideHudObject(GameObject hudObject)
+    {
+        if (hudObject == null)
+            return;
+
+        CanvasGroup group = hudObject.GetComponent<CanvasGroup>();
+        if (group == null)
+            group = hudObject.AddComponent<CanvasGroup>();
+
+        for (int index = 0; index < hiddenSiblingUis.Count; index++)
+        {
+            if (hiddenSiblingUis[index].group == group)
+                return;
+        }
+
+        hiddenSiblingUis.Add(new SiblingUiState
+        {
+            group = group,
+            enabled = group.enabled,
+            alpha = group.alpha,
+            interactable = group.interactable,
+            blocksRaycasts = group.blocksRaycasts
+        });
+
+        group.enabled = true;
+        group.alpha = 0f;
+        group.interactable = false;
+        group.blocksRaycasts = false;
+    }
+
+    private void RestoreOtherHud()
+    {
+        for (int index = 0; index < hiddenSiblingUis.Count; index++)
+        {
+            SiblingUiState state = hiddenSiblingUis[index];
+            if (state.group == null)
+                continue;
+
+            state.group.alpha = state.alpha;
+            state.group.interactable = state.interactable;
+            state.group.blocksRaycasts = state.blocksRaycasts;
+            state.group.enabled = state.enabled;
+        }
+
+        hiddenSiblingUis.Clear();
     }
 }

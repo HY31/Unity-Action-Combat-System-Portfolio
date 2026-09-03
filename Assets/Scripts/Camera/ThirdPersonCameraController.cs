@@ -22,6 +22,7 @@ public class ThirdPersonCameraController : MonoBehaviour
     [SerializeField] private float mouseSensitivity = 200f;
     [SerializeField] private float minPitch = -30f;
     [SerializeField] private float maxPitch = 60f;
+    [SerializeField] private float openingBehindPitch = 0f;
 
     [Header("Zoom")]
     [SerializeField] private float defaultDistance = 4f;
@@ -58,11 +59,13 @@ public class ThirdPersonCameraController : MonoBehaviour
     private Tween shakeTween;
     private Tween impactRotationTween;
     private Tween fovTween;
+    private Tween chainPromptZoomTween;
     private Tween parryCameraTween;
     private float baseFieldOfView;
 
     private Vector3 presentationCameraOffset;
     private float presentationDistanceOffset;
+    private float chainPromptDistanceOffset;
     private float presentationAimWeight;
     private float presentationTargetYaw;
     private float presentationTargetPitch;
@@ -97,6 +100,7 @@ public class ThirdPersonCameraController : MonoBehaviour
         shakeTween?.Kill();
         impactRotationTween?.Kill();
         fovTween?.Kill();
+        chainPromptZoomTween?.Kill();
         parryCameraTween?.Kill();
     }
 
@@ -171,6 +175,48 @@ public class ThirdPersonCameraController : MonoBehaviour
         targetPlayer = target.GetComponentInParent<PlayerController>();
     }
 
+    public void SnapBehindTarget(Transform actor)
+    {
+        if (actor == null || yawPivot == null || pitchPivot == null)
+            return;
+
+        Vector3 planarForward = actor.forward;
+        planarForward.y = 0f;
+        if (planarForward.sqrMagnitude <= 0.0001f)
+            return;
+
+        parryCameraTween?.Kill(false);
+        shakeTween?.Kill(false);
+        impactRotationTween?.Kill(false);
+        fovTween?.Kill(false);
+        chainPromptZoomTween?.Kill(false);
+
+        yaw = Mathf.Atan2(planarForward.x, planarForward.z) * Mathf.Rad2Deg;
+        pitch = Mathf.Clamp(openingBehindPitch, minPitch, maxPitch);
+        targetDistance = defaultDistance;
+        currentDistance = defaultDistance;
+
+        presentationCameraOffset = Vector3.zero;
+        presentationDistanceOffset = 0f;
+        chainPromptDistanceOffset = 0f;
+        presentationAimWeight = 0f;
+        presentationTargetYaw = yaw;
+        presentationTargetPitch = pitch;
+
+        transform.position = target != null ? target.position : actor.position;
+        yawPivot.rotation = Quaternion.Euler(0f, yaw, 0f);
+        pitchPivot.localPosition = Vector3.zero;
+        pitchPivot.localRotation = Quaternion.Euler(pitch, 0f, 0f);
+
+        if (cam != null)
+        {
+            cam.transform.localPosition = new Vector3(0f, 0f, -defaultDistance);
+            cam.transform.localRotation = Quaternion.identity;
+            cam.fieldOfView = baseFieldOfView;
+        }
+    }
+
+
     private void ApplyRotation()
     {
         float resolvedYaw = Mathf.LerpAngle(yaw, presentationTargetYaw, presentationAimWeight);
@@ -185,7 +231,7 @@ public class ThirdPersonCameraController : MonoBehaviour
         Vector3 pivotPos = pitchPivot.position;
         float desiredDistance = Mathf.Max(
             collisionRadius + collisionOffset,
-            targetDistance + presentationDistanceOffset);
+            targetDistance + presentationDistanceOffset + chainPromptDistanceOffset);
         Vector3 desiredCameraLocalPos = new Vector3(
             presentationCameraOffset.x,
             presentationCameraOffset.y,
@@ -304,6 +350,54 @@ public class ThirdPersonCameraController : MonoBehaviour
                 value => cam.fieldOfView = value,
                 baseFieldOfView,
                 releaseDuration).SetEase(Ease.OutCubic))
+            .SetUpdate(true);
+    }
+
+    public void BeginChainPromptZoom(float fieldOfViewDelta = -14f, float duration = 0.1f)
+    {
+        if (cam == null)
+            return;
+
+        float resolvedDuration = Mathf.Max(0.01f, duration);
+
+        fovTween?.Kill(false);
+        float targetFieldOfView = Mathf.Clamp(baseFieldOfView + fieldOfViewDelta, 25f, 100f);
+        fovTween = cam
+            .DOFieldOfView(targetFieldOfView, resolvedDuration)
+            .SetEase(Ease.OutCubic)
+            .SetUpdate(true);
+
+        // 다른 타격 FOV 연출이 끼어도 실제 카메라 거리 확대는 선택창이 닫힐 때까지 유지한다.
+        chainPromptZoomTween?.Kill(false);
+        chainPromptZoomTween = DOTween.To(
+                () => chainPromptDistanceOffset,
+                value => chainPromptDistanceOffset = value,
+                -1.4f,
+                resolvedDuration)
+            .SetEase(Ease.OutCubic)
+            .SetUpdate(true);
+    }
+
+    public void EndChainPromptZoom(float duration = 0.16f)
+    {
+        if (cam == null)
+            return;
+
+        float resolvedDuration = Mathf.Max(0.01f, duration);
+
+        fovTween?.Kill(false);
+        fovTween = cam
+            .DOFieldOfView(baseFieldOfView, resolvedDuration)
+            .SetEase(Ease.OutCubic)
+            .SetUpdate(true);
+
+        chainPromptZoomTween?.Kill(false);
+        chainPromptZoomTween = DOTween.To(
+                () => chainPromptDistanceOffset,
+                value => chainPromptDistanceOffset = value,
+                0f,
+                resolvedDuration)
+            .SetEase(Ease.OutCubic)
             .SetUpdate(true);
     }
 

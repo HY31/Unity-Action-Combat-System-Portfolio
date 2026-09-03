@@ -2,6 +2,10 @@ using DG.Tweening;
 using UnityEngine;
 using UnityEngine.UI;
 
+/// <summary>
+/// 극한 회피·패링·궁극기의 화면 색조, 플래시, 레터박스를 런타임 오버레이로 재생한다.
+/// 전투 로직은 건드리지 않고 연출의 생성과 복원만 담당한다.
+/// </summary>
 [DisallowMultipleComponent]
 public sealed class CombatPresentationEffects : MonoBehaviour
 {
@@ -11,10 +15,13 @@ public sealed class CombatPresentationEffects : MonoBehaviour
     private Image flashImage;
     private CanvasGroup perfectDodgeToneGroup;
     private Image perfectDodgeToneImage;
+    private CanvasGroup chainPromptToneGroup;
+    private Image chainPromptToneImage;
     private CanvasGroup letterboxGroup;
 
     private Tween flashTween;
     private Tween perfectDodgeToneTween;
+    private Tween chainPromptToneTween;
     private Tween letterboxTween;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
@@ -36,18 +43,18 @@ public sealed class CombatPresentationEffects : MonoBehaviour
     }
     public static void PlayPerfectDodge(PlayerController player)
     {
-        // 플레이어는 unscaled action time으로 움직이고 주변 전투만 약 0.6초간 느려진다.
-        HitStop.DoSlowMotion(0.16f, 0.12f, 0.48f);
+        // 짧은 정지에 가까운 감속 뒤 천천히 정상 속도로 복귀시켜 극한 회피 성공을 확실히 보여준다.
+        HitStop.DoSlowMotion(0.06f, 0.18f, 0.6f);
 
         CombatPresentationEffects effects = Resolve();
         effects?.PlayPerfectDodgeTone();
 
-        Flash(new Color(0.15f, 0.9f, 1f), 0.075f, 0.2f);
+        Flash(new Color(0.15f, 0.9f, 1f), 0.12f, 0.24f);
 
         if (player != null)
             CombatHitVfx.PlayPerfectDodge(player.transform);
 
-        ThirdPersonCameraController.Active?.PunchFieldOfView(4f, 0.25f);
+        ThirdPersonCameraController.Active?.PunchFieldOfView(5.5f, 0.32f);
     }
 
     public static void PlayParry()
@@ -94,14 +101,20 @@ public sealed class CombatPresentationEffects : MonoBehaviour
 
     public static void BeginChainPrompt()
     {
-        HitStop.DoSlowMotion(0.1f, 0.08f, 0.32f);
+        // 선택 UI가 열린 동안 월드는 거의 정지시키되 unscaled time을 쓰는 UI 입력과 타이머는 유지한다.
+        HitStop.BeginSustainedSlowMotion(0.01f);
         ShowLetterbox(true, 0.12f);
-        Flash(new Color(1f, 0.26f, 0.05f), 0.05f, 0.22f);
+        Resolve()?.SetChainPromptToneVisible(true);
+        Flash(new Color(0.93f, 0.98f, 1f), 0.14f, 0.26f);
+        ThirdPersonCameraController.Active?.BeginChainPromptZoom();
     }
 
     public static void EndChainPrompt()
     {
+        HitStop.EndSustainedSlowMotion();
         ShowLetterbox(false, 0.14f);
+        Resolve()?.SetChainPromptToneVisible(false);
+        ThirdPersonCameraController.Active?.EndChainPromptZoom();
     }
 
     public static void Flash(Color color, float peakAlpha, float duration)
@@ -153,6 +166,7 @@ public sealed class CombatPresentationEffects : MonoBehaviour
     {
         flashTween?.Kill();
         perfectDodgeToneTween?.Kill();
+        chainPromptToneTween?.Kill();
         letterboxTween?.Kill();
 
         if (instance == this)
@@ -175,11 +189,20 @@ public sealed class CombatPresentationEffects : MonoBehaviour
         perfectDodgeToneImage = CreateImage(
             "Perfect Dodge Tone",
             transform,
-            new Color(0.32f, 0.36f, 0.4f, 1f));
+            new Color(0.72f, 0.82f, 0.9f, 1f));
         StretchFullScreen(perfectDodgeToneImage.rectTransform);
         perfectDodgeToneGroup =
             perfectDodgeToneImage.gameObject.AddComponent<CanvasGroup>();
         perfectDodgeToneGroup.alpha = 0f;
+
+        chainPromptToneImage = CreateImage(
+            "Chain Prompt Tone",
+            transform,
+            new Color(0.72f, 0.82f, 0.9f, 1f));
+        StretchFullScreen(chainPromptToneImage.rectTransform);
+        chainPromptToneGroup =
+            chainPromptToneImage.gameObject.AddComponent<CanvasGroup>();
+        chainPromptToneGroup.alpha = 0f;
 
         flashImage = CreateImage("Impact Flash", transform, Color.white);
         StretchFullScreen(flashImage.rectTransform);
@@ -230,18 +253,33 @@ public sealed class CombatPresentationEffects : MonoBehaviour
             return;
 
         perfectDodgeToneTween?.Kill(false);
-        perfectDodgeToneImage.color = new Color(0.32f, 0.36f, 0.4f, 1f);
+        perfectDodgeToneImage.color = new Color(0.72f, 0.82f, 0.9f, 1f);
         perfectDodgeToneGroup.alpha = 0f;
 
-        // 회색빛을 짧게 유지해 파란 캐릭터 강조가 화면에서 분리되어 보이게 한다.
+        // 은회색과 하늘빛 색조를 짧게 보여 준 뒤 불릿 타임 복귀와 함께 원래 색으로 돌아온다.
         perfectDodgeToneTween = DOTween.Sequence()
             .Append(perfectDodgeToneGroup
-                .DOFade(0.24f, 0.045f)
+                .DOFade(0.16f, 0.035f)
                 .SetEase(Ease.OutQuad))
-            .AppendInterval(0.14f)
+            .AppendInterval(0.22f)
             .Append(perfectDodgeToneGroup
-                .DOFade(0f, 0.42f)
+                .DOFade(0f, 0.5f)
                 .SetEase(Ease.OutCubic))
+            .SetUpdate(true);
+    }
+
+    private void SetChainPromptToneVisible(bool visible)
+    {
+        if (chainPromptToneGroup == null || chainPromptToneImage == null)
+            return;
+
+        chainPromptToneTween?.Kill(false);
+        chainPromptToneImage.color = new Color(0.72f, 0.82f, 0.9f, 1f);
+
+        // 은색 바탕 위로 하늘색을 얹고 흰색 플래시를 별도로 겹쳐 붉은 경고색과 구분한다.
+        chainPromptToneTween = chainPromptToneGroup
+            .DOFade(visible ? 0.16f : 0f, visible ? 0.08f : 0.16f)
+            .SetEase(visible ? Ease.OutCubic : Ease.InCubic)
             .SetUpdate(true);
     }
 

@@ -1,5 +1,8 @@
 using UnityEngine;
 
+/// <summary>
+/// 적중·패링·극한 회피에 필요한 공용 파티클과 런타임 머티리얼을 생성해 재사용한다.
+/// </summary>
 public sealed class CombatHitVfx : MonoBehaviour
 {
     private const string ShaderResourcePath = "VFX/CombatHitAdditive";
@@ -124,7 +127,7 @@ public sealed class CombatHitVfx : MonoBehaviour
             return;
 
         perfectDodgeTarget = target;
-        perfectDodgeFollowRemaining = 0.55f;
+        perfectDodgeFollowRemaining = 0.78f;
         transform.position = target.position + Vector3.up * 0.95f;
 
         dodgeAuraParticles.Stop(
@@ -134,8 +137,8 @@ public sealed class CombatHitVfx : MonoBehaviour
             true,
             ParticleSystemStopBehavior.StopEmittingAndClear);
 
-        Color cyan = new Color(0.12f, 0.78f, 1f, 0.9f);
-        Color paleBlue = new Color(0.58f, 0.94f, 1f, 0.82f);
+        Color cyan = new Color(0.08f, 0.82f, 1f, 1f);
+        Color paleBlue = new Color(0.68f, 0.97f, 1f, 0.95f);
 
         // 카메라를 향한 청록색 링이 캐릭터 외곽을 짧게 감싸는 강조선 역할을 한다.
         EmitParticle(
@@ -143,38 +146,38 @@ public sealed class CombatHitVfx : MonoBehaviour
             Vector3.zero,
             Vector3.zero,
             cyan,
-            2.25f,
-            0.5f);
+            2.8f,
+            0.72f);
         EmitParticle(
             dodgeAuraParticles,
             new Vector3(0f, 0.05f, 0f),
             Vector3.zero,
             paleBlue,
-            1.8f,
-            0.42f);
+            2.3f,
+            0.62f);
 
-        const int orbCount = 22;
+        const int orbCount = 34;
         for (int i = 0; i < orbCount; i++)
         {
             float angle = NextFloat() * Mathf.PI * 2f;
-            float radius = Mathf.Lerp(0.32f, 0.82f, NextFloat());
+            float radius = Mathf.Lerp(0.35f, 1.05f, NextFloat());
             Vector3 localPosition = new Vector3(
                 Mathf.Cos(angle) * radius,
-                Mathf.Lerp(-0.72f, 0.82f, NextFloat()),
+                Mathf.Lerp(-0.8f, 1f, NextFloat()),
                 Mathf.Sin(angle) * radius);
             Vector3 outward = new Vector3(
                 localPosition.x,
                 Mathf.Lerp(0.15f, 0.65f, NextFloat()),
                 localPosition.z).normalized;
-            Vector3 velocity = outward * Mathf.Lerp(0.35f, 1.25f, NextFloat());
+            Vector3 velocity = outward * Mathf.Lerp(0.45f, 1.65f, NextFloat());
 
             EmitParticle(
                 dodgeOrbParticles,
                 localPosition,
                 velocity,
                 Color.Lerp(cyan, paleBlue, NextFloat()),
-                Mathf.Lerp(0.045f, 0.11f, NextFloat()),
-                Mathf.Lerp(0.3f, 0.62f, NextFloat()));
+                Mathf.Lerp(0.055f, 0.14f, NextFloat()),
+                Mathf.Lerp(0.38f, 0.78f, NextFloat()));
         }
     }
 
