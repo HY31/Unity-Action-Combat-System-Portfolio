@@ -16,7 +16,9 @@ public class EnemyData : ScriptableObject
     [Header("Stun / Groggy")]
     public float maxStun = 100f;
     [Range(0f, 1f)] public float stunResistance = 0f;
-    public float groggyDuration = 3f;
+    [Tooltip("노란색 공격 패링 성공 시 그로기 게이지에 추가하는 값이다.")]
+    [Min(0f)] public float parryStunBuildUp = 8f;
+    public float groggyDuration = 12f;
     [Min(1f)] public float groggyDamageMultiplier = 1.5f;
 
     [Header("Hit Reaction")]

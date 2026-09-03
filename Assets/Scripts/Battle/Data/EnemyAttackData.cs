@@ -7,11 +7,27 @@ public enum WarningType
     Yellow,
     Red
 }
+
+public enum EnemyHitDetectionMode
+{
+    BodyBox,
+    WeaponSweep
+}
 [Serializable]
 public struct EnemyAttackWindow
 {
     [Range(0f, 1f)] public float start;
     [Range(0f, 1f)] public float end;
+}
+
+[Serializable]
+public struct EnemyAttackSoundWindow
+{
+    [Tooltip("해당 HitActive 구간 직전에 재생할 Resources/Audio/SFX/Combat 음원 이름이다.")]
+    public string swingClipName;
+
+    [Tooltip("해당 HitActive 구간이 시작되는 순간 함께 재생할 음원 이름이다.")]
+    public string hitActiveClipName;
 }
 
 [CreateAssetMenu(menuName = "Combat(Enemy)/Enemy Attack Data")]
@@ -74,6 +90,16 @@ public class EnemyAttackData : ScriptableObject
     public EnemyAttackWindow[] followUpActiveWindows;
     public EnemyAttackWindow[] followUpReactionWindows;
 
+    [Header("Audio")]
+    [Tooltip("기본 공격의 activeWindows와 같은 인덱스로 대응하는 공격음 설정이다.")]
+    public EnemyAttackSoundWindow[] soundWindows;
+
+    [Tooltip("후속 공격의 followUpActiveWindows와 같은 인덱스로 대응하는 공격음 설정이다.")]
+    public EnemyAttackSoundWindow[] followUpSoundWindows;
+
+    [Tooltip("휘두름 소리를 HitActive보다 먼저 재생할 정규화 시간이다.")]
+    [Range(0f, 0.5f)] public float swingSoundLeadTime = 0.1f;
+
     [Header("Movement")]
     [Tooltip("이 공격이 보스 루트를 전진시키는지 결정한다.")]
     public bool useForwardMovement;
@@ -100,6 +126,27 @@ public class EnemyAttackData : ScriptableObject
 
     public Vector3 followUpHitBoxCenter = new Vector3(0f, 1.5f, 2f);
     public Vector3 followUpHitBoxSize = new Vector3(5f, 3f, 4f);
+
+    [Header("Hit Detection")]
+    [Tooltip("Body Box는 기존 박스 Trigger를, Weapon Sweep은 지정 본의 프레임 간 궤적을 사용한다.")]
+    public EnemyHitDetectionMode hitDetectionMode;
+
+    [Tooltip("Weapon Sweep의 기준이 되는 Animator 하위 본 이름이다.")]
+    public string weaponSweepBoneName;
+
+    [Min(0.01f)] public float weaponSweepRadius = 0.65f;
+    public Vector3 weaponSweepLocalStart;
+    public Vector3 weaponSweepLocalEnd = Vector3.up;
+    [Range(2, 12)] public int weaponSweepPathSamples = 5;
+
+    [Tooltip("후속 클립이 별도의 판정 방식을 사용하는지 결정한다.")]
+    public bool overrideFollowUpHitDetection;
+    public EnemyHitDetectionMode followUpHitDetectionMode;
+    public string followUpWeaponSweepBoneName;
+    [Min(0.01f)] public float followUpWeaponSweepRadius = 0.65f;
+    public Vector3 followUpWeaponSweepLocalStart;
+    public Vector3 followUpWeaponSweepLocalEnd = Vector3.up;
+    [Range(2, 12)] public int followUpWeaponSweepPathSamples = 5;
 
     [Header("Target Tracking")]
     public bool useTargetTracking;

@@ -1,5 +1,9 @@
 using UnityEngine;
 
+/// <summary>
+/// 맵 전역에서 활성 캐릭터를 추적하고 거리와 쿨다운에 따라 보스 공격을 끊임없이 요청한다.
+/// 공격 실행과 피격 상태는 EnemyController에 위임한다.
+/// </summary>
 // AI가 붙는 보스 루트에는 공격 실행기와 이동용 Rigidbody가 반드시 함께 있어야 한다.
 [RequireComponent(typeof(EnemyController), typeof(Rigidbody))]
 public class EnemyCombatAI : MonoBehaviour
@@ -138,6 +142,18 @@ public class EnemyCombatAI : MonoBehaviour
         currentMovementAnimation = nextAnimation;
         if (enemyController.animator == null || string.IsNullOrEmpty(nextAnimation))
             return;
+
+        AnimatorStateInfo currentState =
+            enemyController.animator.GetCurrentAnimatorStateInfo(0);
+        AnimatorStateInfo nextState =
+            enemyController.animator.GetNextAnimatorStateInfo(0);
+
+        // EnemyController가 공격 종료와 함께 시작한 Idle 전환을 다시 시작하지 않는다.
+        if (currentState.IsName(nextAnimation) ||
+            (enemyController.animator.IsInTransition(0) && nextState.IsName(nextAnimation)))
+        {
+            return;
+        }
 
         // 이동과 대기 상태가 실제로 바뀔 때만 전환해 루프가 매 물리 프레임 재시작되지 않게 한다.
         enemyController.animator.CrossFade(nextAnimation, animationBlendDuration);

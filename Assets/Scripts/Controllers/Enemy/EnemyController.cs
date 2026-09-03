@@ -2,9 +2,14 @@ using System.Collections.Generic;
 using UnityEngine;
 using DG.Tweening;
 
+/// <summary>
+/// 보스의 체력·그로기·경직·이상 상태와 공격 패턴 실행을 소유하는 전투 도메인 컨트롤러다.
+/// AI는 공격 선택만 요청하고 실제 판정·애니메이션·피격 결과는 이 클래스에서 확정한다.
+/// </summary>
 public class EnemyController : MonoBehaviour
 {
     public const int MaxChainSkillsPerGroggy = 3;
+    private const float AttackEndBlendDuration = 0.12f;
 
     private enum EnemyAttackPhase
     {
@@ -85,6 +90,8 @@ public class EnemyController : MonoBehaviour
 
     public Animator animator;
     private float baseAnimatorSpeed = 1f;
+    private Transform animationPositionRoot;
+    private Vector3 animationPositionRootLocalPosition;
     private Rigidbody enemyRigidbody;
 
     private Vector3 attackMoveDirection;
@@ -96,8 +103,14 @@ public class EnemyController : MonoBehaviour
     private readonly Dictionary<EnemyAttackData, float> patternReadyTimes =
         new Dictionary<EnemyAttackData, float>();
     private bool attackSwingPlayed;
+    private int nextAttackSwingSoundIndex;
     public HitBox attackHitBox;
     private BoxCollider attackBoxCollider;
+    private WeaponSweepDetector weaponSweepDetector;
+    private Transform weaponSweepSource;
+    private bool previousShouldHit;
+    private int activeHitWindowIndex = -1;
+    private bool missingSweepBoneWarned;
     private Vector3 defaultAttackHitBoxCenter;
     private Vector3 defaultAttackHitBoxSize;
 
@@ -115,6 +128,7 @@ public class EnemyController : MonoBehaviour
     private bool warningRedVisible;
     private Tween warningYellowTween;
     private Tween warningRedTween;
+    private CombatWarningCrossVfx warningCrossVfx;
 
     public WarningType CurrentWarningType => currentAttack != null ? currentAttack.warningType : WarningType.None;
 
@@ -160,6 +174,7 @@ public class EnemyController : MonoBehaviour
         if (animator != null)
             baseAnimatorSpeed = animator.speed;
 
+        InitializeAnimationPositionRoot();
         enemyRigidbody = GetComponent<Rigidbody>();
 
         // 높은 물리 콜라이더 대신 수평 차단기를 사용해 캐릭터가 위로 튀지 않게 한다.
@@ -179,6 +194,7 @@ public class EnemyController : MonoBehaviour
         }
 
         InitializeWarningSigns();
+        InitializeWeaponSweep();
 
         currentHp = enemyData.maxHp;
         isDefeated = false;
@@ -235,6 +251,34 @@ public class EnemyController : MonoBehaviour
         }
     }
 
+    private void LateUpdate()
+    {
+        LockAnimationRootPosition();
+
+        // Animator가 현재 프레임의 본 자세를 반영한 뒤 실제 무기 궤적을 검사한다.
+        weaponSweepDetector?.Step();
+    }
+
+    private void InitializeAnimationPositionRoot()
+    {
+        if (animator == null)
+            return;
+
+        animationPositionRoot = animator.transform.Find("Root");
+        if (animationPositionRoot != null)
+            animationPositionRootLocalPosition = animationPositionRoot.localPosition;
+    }
+
+    private void LockAnimationRootPosition()
+    {
+        if (animationPositionRoot == null)
+            return;
+
+        // 추출 애니메이션의 Root 이동과 컨트롤러의 전진 이동이 중복되지 않게 한다.
+        // 회전 커브는 건드리지 않아 회전 공격의 몸동작은 그대로 보존한다.
+        animationPositionRoot.localPosition = animationPositionRootLocalPosition;
+    }
+
     private void UpdateHitReactionGauge()
     {
         if (currentHitReactionGauge <= 0f)
@@ -286,7 +330,12 @@ public class EnemyController : MonoBehaviour
         lastAttack = selectedAttack;
         BeginPatternSelectionCooldown(selectedAttack);
         attackSwingPlayed = false;
+        nextAttackSwingSoundIndex = 0;
+        previousShouldHit = false;
+        activeHitWindowIndex = -1;
+        missingSweepBoneWarned = false;
         ConfigureAttackHitBox(false);
+        ConfigureWeaponSweep(false);
         attackHitBox.SetFeedback(currentAttack.hitFeedback);
         attackHitBox.SetHitData(new CombatHitData
         {
@@ -300,7 +349,7 @@ public class EnemyController : MonoBehaviour
 
         BeginAttackMovement();
 
-        attackHitBox.SetActive(false);
+        DisableAttackDetection();
 
         float playbackSpeed = Mathf.Max(
             0.01f,
@@ -440,7 +489,6 @@ public class EnemyController : MonoBehaviour
 
         float t = info.normalizedTime;
 
-        UpdateAttackSwing(t, isFollowUp);
         UpdateAttackTracking(t, isFollowUp);
 
         if (!isFollowUp)
@@ -497,7 +545,9 @@ public class EnemyController : MonoBehaviour
         IsInActiveWindow = shouldHit;
         IsInReactionWindow = canReaction;
 
-        attackHitBox.SetActive(shouldHit);
+        int hitWindowIndex = ResolveActiveWindowIndex(t, isFollowUp);
+        UpdateAttackAudio(t, isFollowUp, shouldHit, hitWindowIndex);
+        UpdateAttackDetection(shouldHit, isFollowUp, hitWindowIndex);
         UpdateWarningSigns(showYellow, showRed);
 
         bool hasFollowUp = !string.IsNullOrEmpty(currentAttack.followUpAnim);
@@ -517,7 +567,62 @@ public class EnemyController : MonoBehaviour
         FinishAttack();
     }
 
-    private void UpdateAttackSwing(float normalizedTime, bool isFollowUp)
+    /// <summary>
+    /// AttackData의 HitActive 구간별 설정에 맞춰 휘두름음과 판정 시작음을 재생한다.
+    /// 별도 설정이 없는 공격은 기존 공용 적 휘두름음을 한 번 재생한다.
+    /// </summary>
+    private void UpdateAttackAudio(
+        float normalizedTime,
+        bool isFollowUp,
+        bool shouldHit,
+        int hitWindowIndex)
+    {
+        EnemyAttackSoundWindow[] soundWindows = isFollowUp
+            ? currentAttack.followUpSoundWindows
+            : currentAttack.soundWindows;
+
+        if (soundWindows == null || soundWindows.Length == 0)
+        {
+            UpdateFallbackAttackSwing(normalizedTime, isFollowUp);
+            return;
+        }
+
+        while (nextAttackSwingSoundIndex < soundWindows.Length)
+        {
+            if (!TryResolveActiveWindowStart(
+                    isFollowUp,
+                    nextAttackSwingSoundIndex,
+                    out float activeStart))
+            {
+                nextAttackSwingSoundIndex++;
+                continue;
+            }
+
+            float playTime = Mathf.Max(
+                0f,
+                activeStart - Mathf.Max(0f, currentAttack.swingSoundLeadTime));
+
+            if (normalizedTime < playTime)
+                break;
+
+            CombatAudio.PlayEnemyAttackSound(
+                soundWindows[nextAttackSwingSoundIndex].swingClipName);
+            nextAttackSwingSoundIndex++;
+        }
+
+        bool enteredHitActive =
+            shouldHit &&
+            hitWindowIndex >= 0 &&
+            (!previousShouldHit || activeHitWindowIndex != hitWindowIndex);
+
+        if (enteredHitActive && hitWindowIndex < soundWindows.Length)
+        {
+            CombatAudio.PlayEnemyAttackSound(
+                soundWindows[hitWindowIndex].hitActiveClipName);
+        }
+    }
+
+    private void UpdateFallbackAttackSwing(float normalizedTime, bool isFollowUp)
     {
         if (attackSwingPlayed || currentAttack == null)
             return;
@@ -528,6 +633,33 @@ public class EnemyController : MonoBehaviour
 
         attackSwingPlayed = true;
         CombatAudio.PlayEnemyAttackSwing();
+    }
+
+    private bool TryResolveActiveWindowStart(
+        bool isFollowUp,
+        int windowIndex,
+        out float activeStart)
+    {
+        EnemyAttackWindow[] windows = isFollowUp
+            ? currentAttack.followUpActiveWindows
+            : currentAttack.useTimingWindows
+                ? currentAttack.activeWindows
+                : null;
+
+        if (windows != null && windows.Length > 0)
+        {
+            if (windowIndex < 0 || windowIndex >= windows.Length)
+            {
+                activeStart = 0f;
+                return false;
+            }
+
+            activeStart = Mathf.Min(windows[windowIndex].start, windows[windowIndex].end);
+            return true;
+        }
+
+        activeStart = isFollowUp ? 0.30f : currentAttack.startUpEnd;
+        return windowIndex == 0;
     }
 
     private float ResolveAttackActiveStart(bool isFollowUp)
@@ -576,15 +708,21 @@ public class EnemyController : MonoBehaviour
 
     private void InitializeWarningSigns()
     {
+        warningCrossVfx = GetComponent<CombatWarningCrossVfx>();
+        if (warningCrossVfx == null)
+            warningCrossVfx = gameObject.AddComponent<CombatWarningCrossVfx>();
+
         if (warningSign_Yellow != null)
         {
             warningYellowBaseScale = warningSign_Yellow.transform.localScale;
+            DisableLegacyWarningVisual(warningSign_Yellow);
             warningSign_Yellow.SetActive(false);
         }
 
         if (warningSign_Red != null)
         {
             warningRedBaseScale = warningSign_Red.transform.localScale;
+            DisableLegacyWarningVisual(warningSign_Red);
             warningSign_Red.SetActive(false);
         }
     }
@@ -604,6 +742,38 @@ public class EnemyController : MonoBehaviour
             showRed,
             ref warningRedVisible,
             ref warningRedTween);
+
+        if (showYellow)
+        {
+            Transform target = warningSign_Yellow != null
+                ? warningSign_Yellow.transform
+                : transform;
+            Vector3 offset = warningSign_Yellow != null ? Vector3.zero : Vector3.up * 2.5f;
+            warningCrossVfx?.Play(target, WarningType.Yellow, offset);
+        }
+        else if (showRed)
+        {
+            Transform target = warningSign_Red != null
+                ? warningSign_Red.transform
+                : transform;
+            Vector3 offset = warningSign_Red != null ? Vector3.zero : Vector3.up * 2.5f;
+            warningCrossVfx?.Play(target, WarningType.Red, offset);
+        }
+        else
+        {
+            warningCrossVfx?.Stop();
+        }
+    }
+
+    private static void DisableLegacyWarningVisual(GameObject sign)
+    {
+        Renderer[] renderers = sign.GetComponentsInChildren<Renderer>(true);
+        for (int i = 0; i < renderers.Length; i++)
+            renderers[i].enabled = false;
+
+        Collider[] colliders = sign.GetComponentsInChildren<Collider>(true);
+        for (int i = 0; i < colliders.Length; i++)
+            colliders[i].enabled = false;
     }
 
     private static void SetWarningSignVisible(
@@ -650,11 +820,13 @@ public class EnemyController : MonoBehaviour
         IsInWarningWindow = false;
         IsInActiveWindow = false;
         IsInReactionWindow = false;
-        attackHitBox.SetActive(false);
+        DisableAttackDetection();
         HideWarningSigns();
         ClearAttackMovement();
         ConfigureAttackHitBox(true);
+        ConfigureWeaponSweep(true);
         attackSwingPlayed = false;
+        nextAttackSwingSoundIndex = 0;
 
         phase = EnemyAttackPhase.FollowUp;
         animator.speed = baseAnimatorSpeed * Mathf.Max(
@@ -670,17 +842,25 @@ public class EnemyController : MonoBehaviour
         IsInWarningWindow = false;
         IsInActiveWindow = false;
         IsInReactionWindow = false;
-        attackHitBox.SetActive(false);
+        DisableAttackDetection();
         HideWarningSigns();
         ClearAttackMovement();
         RestoreAnimatorSpeed();
         attackSwingPlayed = false;
+        nextAttackSwingSoundIndex = 0;
 
         currentAttack = null;
         phase = EnemyAttackPhase.None;
 
         if (!string.IsNullOrEmpty(endAnimation))
-            animator.CrossFade(endAnimation, 0.05f);
+        {
+            // 공격마다 길이가 달라도 같은 실제 시간 동안 자연스럽게 대기 자세로 복귀한다.
+            animator.CrossFadeInFixedTime(
+                endAnimation,
+                AttackEndBlendDuration,
+                0,
+                0f);
+        }
     }
 
     private void UpdateAttackTracking(float normalizedTime, bool isFollowUp)
@@ -711,6 +891,140 @@ public class EnemyController : MonoBehaviour
 
         if (currentAttack.steerMovementWhileTracking)
             attackMoveDirection = attackTrackingDirection;
+    }
+    private int ResolveActiveWindowIndex(float normalizedTime, bool isFollowUp)
+    {
+        EnemyAttackWindow[] windows = isFollowUp
+            ? currentAttack.followUpActiveWindows
+            : currentAttack.useTimingWindows
+                ? currentAttack.activeWindows
+                : null;
+
+        if (windows == null || windows.Length == 0)
+            return IsInLegacyWindow(normalizedTime, currentAttack.startUpEnd, currentAttack.activeEnd) ? 0 : -1;
+
+        for (int i = 0; i < windows.Length; i++)
+        {
+            if (IsInLegacyWindow(normalizedTime, windows[i].start, windows[i].end))
+                return i;
+        }
+
+        return -1;
+    }
+
+    private void InitializeWeaponSweep()
+    {
+        if (attackHitBox == null)
+            return;
+
+        weaponSweepDetector = attackHitBox.GetComponent<WeaponSweepDetector>();
+        if (weaponSweepDetector == null)
+            weaponSweepDetector = attackHitBox.gameObject.AddComponent<WeaponSweepDetector>();
+
+        weaponSweepDetector.Initialize(attackHitBox);
+    }
+
+    private void ConfigureWeaponSweep(bool isFollowUp)
+    {
+        weaponSweepSource = null;
+
+        if (currentAttack == null || animator == null)
+            return;
+
+        string boneName = isFollowUp && currentAttack.overrideFollowUpHitDetection
+            ? currentAttack.followUpWeaponSweepBoneName
+            : currentAttack.weaponSweepBoneName;
+
+        if (string.IsNullOrWhiteSpace(boneName))
+            return;
+
+        foreach (Transform child in animator.GetComponentsInChildren<Transform>(true))
+        {
+            if (child.name == boneName)
+            {
+                weaponSweepSource = child;
+                return;
+            }
+        }
+    }
+
+    private void UpdateAttackDetection(bool shouldHit, bool isFollowUp, int hitWindowIndex)
+    {
+        EnemyHitDetectionMode mode = isFollowUp && currentAttack.overrideFollowUpHitDetection
+            ? currentAttack.followUpHitDetectionMode
+            : currentAttack.hitDetectionMode;
+
+        if (mode == EnemyHitDetectionMode.BodyBox)
+        {
+            if (weaponSweepDetector != null && weaponSweepDetector.IsActive)
+                weaponSweepDetector.End();
+
+            attackHitBox.SetActive(shouldHit);
+            previousShouldHit = shouldHit;
+            activeHitWindowIndex = hitWindowIndex;
+            return;
+        }
+
+        if (!shouldHit)
+        {
+            weaponSweepDetector?.End();
+            attackHitBox.SetActive(false);
+            previousShouldHit = false;
+            activeHitWindowIndex = -1;
+            return;
+        }
+
+        if (weaponSweepDetector == null || weaponSweepSource == null)
+        {
+            if (!missingSweepBoneWarned)
+            {
+                Debug.LogWarning($"{name}: Weapon Sweep bone을 찾지 못해 Body Box 판정으로 대체합니다.");
+                missingSweepBoneWarned = true;
+            }
+
+            if (weaponSweepDetector != null && weaponSweepDetector.IsActive)
+                weaponSweepDetector.End();
+
+            attackHitBox.SetActive(true);
+            previousShouldHit = true;
+            return;
+        }
+
+        if (!previousShouldHit || activeHitWindowIndex != hitWindowIndex || !weaponSweepDetector.IsActive)
+        {
+            bool useFollowUpSettings = isFollowUp && currentAttack.overrideFollowUpHitDetection;
+            float radius = useFollowUpSettings
+                ? currentAttack.followUpWeaponSweepRadius
+                : currentAttack.weaponSweepRadius;
+            Vector3 localStart = useFollowUpSettings
+                ? currentAttack.followUpWeaponSweepLocalStart
+                : currentAttack.weaponSweepLocalStart;
+            Vector3 localEnd = useFollowUpSettings
+                ? currentAttack.followUpWeaponSweepLocalEnd
+                : currentAttack.weaponSweepLocalEnd;
+            int pathSamples = useFollowUpSettings
+                ? currentAttack.followUpWeaponSweepPathSamples
+                : currentAttack.weaponSweepPathSamples;
+
+            weaponSweepDetector.Begin(
+                weaponSweepSource,
+                radius,
+                localStart,
+                localEnd,
+                pathSamples);
+        }
+        previousShouldHit = true;
+        activeHitWindowIndex = hitWindowIndex;
+    }
+
+    private void DisableAttackDetection()
+    {
+        previousShouldHit = false;
+        activeHitWindowIndex = -1;
+        weaponSweepDetector?.End();
+
+        if (attackHitBox != null)
+            attackHitBox.SetActive(false);
     }
     private void ConfigureAttackHitBox(bool useFollowUpShape)
     {
@@ -853,8 +1167,7 @@ public class EnemyController : MonoBehaviour
 
     public void InterruptAttack()
     {
-        if (attackHitBox != null)
-            attackHitBox.SetActive(false);
+        DisableAttackDetection();
 
         HideWarningSigns();
 
@@ -865,6 +1178,7 @@ public class EnemyController : MonoBehaviour
         RestoreAnimatorSpeed();
         ClearAttackMovement();
         attackSwingPlayed = false;
+        nextAttackSwingSoundIndex = 0;
 
         if (animator != null && currentAttack != null && !string.IsNullOrEmpty(currentAttack.endAnim))
             animator.CrossFade(currentAttack.endAnim, 0.05f);
@@ -887,6 +1201,22 @@ public class EnemyController : MonoBehaviour
 
         // 노란색 공격의 패링이 성립하면 공격 판정과 이동을 즉시 끊고 확정 경직을 건다.
         InterruptAttack();
+
+        float parryStun = Mathf.Max(0f, enemyData.parryStunBuildUp);
+        if (parryStun > 0f && enemyData.maxStun > 0f)
+        {
+            currentStun = Mathf.Clamp(
+                currentStun + parryStun,
+                0f,
+                enemyData.maxStun);
+
+            if (currentStun >= enemyData.maxStun)
+            {
+                EnterGroggy();
+                return true;
+            }
+        }
+
         isInHitReaction = true;
         hitReactionTimeRemaining = Mathf.Max(
             0.01f,
@@ -981,13 +1311,6 @@ public class EnemyController : MonoBehaviour
 
         if (isGroggy && isHeavyAttack)
         {
-            if (hitData.isChainSkill &&
-                chainSkillsStartedThisGroggy >= MaxChainSkillsPerGroggy)
-            {
-                // 세 번째 콤보의 첫 적중부터 무지개 강조를 끝내고 회색 소진 단계로 전환한다.
-                chainSkillSequenceComplete = true;
-            }
-
             if (!chainSkillSequenceComplete)
                 TryRequestChainSkill(hitData.attacker);
         }
@@ -1220,6 +1543,11 @@ public class EnemyController : MonoBehaviour
 
         chainSkillPromptPending = false;
         chainSkillsStartedThisGroggy++;
+
+        // 세 번째 콤보 스킬은 첫 타격 전 선택 시점에 이미 이번 연계 횟수를 모두 사용한 것으로 본다.
+        if (chainSkillsStartedThisGroggy >= MaxChainSkillsPerGroggy)
+            chainSkillSequenceComplete = true;
+
         return true;
     }
 
@@ -1245,6 +1573,10 @@ public class EnemyController : MonoBehaviour
                     animator.CrossFade(enemyData.groggyLoopAnim, 0.08f);
             }
         }
+
+        // 콤보 스킬 선택 UI가 열린 동안에는 선택 시간과 별개로 그로기 시간을 소비하지 않는다.
+        if (chainSkillPromptPending)
+            return;
 
         float duration = Mathf.Max(0.01f, enemyData.groggyDuration);
         groggyTimeRemaining = Mathf.Max(0f, groggyTimeRemaining - Time.deltaTime);
