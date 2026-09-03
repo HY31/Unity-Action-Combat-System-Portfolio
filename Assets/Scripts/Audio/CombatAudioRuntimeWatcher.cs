@@ -13,7 +13,6 @@ public sealed class CombatAudioRuntimeWatcher : MonoBehaviour
 
     private EnemyController[] trackedEnemies = System.Array.Empty<EnemyController>();
     private PlayerController[] trackedPlayers = System.Array.Empty<PlayerController>();
-    private PlayerController lastActivePlayer;
     private float nextObjectRefreshTime;
 
     private struct EnemySnapshot
@@ -25,7 +24,6 @@ public sealed class CombatAudioRuntimeWatcher : MonoBehaviour
     private struct PlayerSnapshot
     {
         public IPlayerState state;
-        public bool energyReady;
         public bool parryImpactPlayed;
         public float parryImpactTime;
     }
@@ -105,33 +103,24 @@ public sealed class CombatAudioRuntimeWatcher : MonoBehaviour
 
     private void TrackPlayers()
     {
-        PlayerController activePlayer = null;
-
         foreach (PlayerController player in trackedPlayers)
         {
             if (player == null)
                 continue;
 
-            if (player.gameObject.activeInHierarchy)
-                activePlayer = player;
-
             if (!playerSnapshots.TryGetValue(player, out PlayerSnapshot snapshot))
             {
                 playerSnapshots[player] = new PlayerSnapshot
                 {
-                    state = player.CurrentState,
-                    energyReady = player.IsEnhancedBranchReady
+                    state = player.CurrentState
                 };
                 continue;
             }
 
-            if (!snapshot.energyReady && player.IsEnhancedBranchReady)
-                CombatAudio.PlayEnergyReady();
-
             if (player.CurrentState != snapshot.state)
             {
                 if (player.CurrentState == player.HitState)
-                    CombatAudio.PlayHit(player.LastHitWasHeavy ? 1.3f : 1f);
+                    CombatAudio.PlayPlayerHit(player.LastHitWasHeavy ? 1.3f : 1f);
 
                 if (player.CurrentState == player.ParryState)
                 {
@@ -149,14 +138,8 @@ public sealed class CombatAudioRuntimeWatcher : MonoBehaviour
             }
 
             snapshot.state = player.CurrentState;
-            snapshot.energyReady = player.IsEnhancedBranchReady;
             playerSnapshots[player] = snapshot;
         }
 
-        if (lastActivePlayer != null && activePlayer != null && activePlayer != lastActivePlayer)
-            CombatAudio.PlaySwitch();
-
-        if (activePlayer != null)
-            lastActivePlayer = activePlayer;
     }
 }

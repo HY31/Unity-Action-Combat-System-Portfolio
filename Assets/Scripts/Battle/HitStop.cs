@@ -1,6 +1,9 @@
 using UnityEngine;
 using DG.Tweening;
 
+/// <summary>
+/// 타격 정지·슬로 모션·컷신 일시정지를 하나의 Time.timeScale 우선순위로 합성한다.
+/// </summary>
 public class HitStop : MonoBehaviour
 {
     private static Tween activeHitStop;
@@ -8,6 +11,9 @@ public class HitStop : MonoBehaviour
     private static bool isHitStopped;
     private static bool isExternallyPaused;
     private static float presentationTimeScale = 1f;
+    private static float sustainedTimeScale = 1f;
+
+    public static bool IsExternallyPaused => isExternallyPaused;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
     private static void ResetStaticState()
@@ -17,6 +23,7 @@ public class HitStop : MonoBehaviour
         isHitStopped = false;
         isExternallyPaused = false;
         presentationTimeScale = 1f;
+        sustainedTimeScale = 1f;
     }
 
     public static void DoHitStop(float duration = 0.05f)
@@ -79,6 +86,18 @@ public class HitStop : MonoBehaviour
         ApplyTimeScale();
     }
 
+    public static void BeginSustainedSlowMotion(float timeScale)
+    {
+        sustainedTimeScale = Mathf.Clamp(timeScale, 0.001f, 1f);
+        ApplyTimeScale();
+    }
+
+    public static void EndSustainedSlowMotion()
+    {
+        sustainedTimeScale = 1f;
+        ApplyTimeScale();
+    }
+
     public static void SetExternalPause(bool paused)
     {
         isExternallyPaused = paused;
@@ -89,6 +108,6 @@ public class HitStop : MonoBehaviour
     {
         Time.timeScale = isExternallyPaused || isHitStopped
             ? 0f
-            : presentationTimeScale;
+            : Mathf.Min(presentationTimeScale, sustainedTimeScale);
     }
 }
