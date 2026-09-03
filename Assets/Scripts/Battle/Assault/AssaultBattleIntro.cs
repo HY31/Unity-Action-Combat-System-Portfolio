@@ -5,10 +5,18 @@ using UnityEngine.InputSystem;
 using UnityEngine.UI;
 using UnityEngine.Video;
 
+/// <summary>
+/// 강습전 진입 영상을 준비·재생하는 동안 파티 입력과 시작 트리거를 잠그고 종료 후 해제한다.
+/// 영상이 없거나 준비에 실패하면 즉시 플레이 가능한 대기 구간으로 복귀한다.
+/// </summary>
 [DisallowMultipleComponent]
 [DefaultExecutionOrder(-100)]
 public sealed class AssaultBattleIntro : MonoBehaviour
 {
+    private const int OverlaySortingOrder = 32767;
+    private const float MinimumVisibleLoadingSeconds = 2f;
+    private const float MinimumLoadingFadeSeconds = 0.25f;
+
     [Header("Flow")]
     [SerializeField] private AssaultBattleController battleController;
     [SerializeField] private PartyManager partyManager;
@@ -27,11 +35,20 @@ public sealed class AssaultBattleIntro : MonoBehaviour
     [SerializeField, Min(1f)] private float prepareTimeout = 8f;
     [SerializeField, Min(0f)] private float fadeOutDuration = 0.2f;
 
+    [Header("Loading Presentation")]
+    [Tooltip("영상 준비가 빨라도 로딩 연출을 읽을 수 있도록 보장하는 최소 표시 시간이다.")]
+    [SerializeField, Min(0f)] private float minimumLoadingDuration = 2f;
+    [SerializeField, Min(0f)] private float loadingFadeDuration = 0.25f;
+
     private RenderTexture runtimeTexture;
     private Coroutine prepareTimeoutRoutine;
     private Coroutine finishRoutine;
+    private Coroutine beginPlaybackRoutine;
+    private AssaultOpeningLoadingOverlay loadingOverlay;
     private bool introCompleted;
     private bool finishRequested;
+    private readonly System.Collections.Generic.List<Canvas> hiddenCanvases =
+        new System.Collections.Generic.List<Canvas>();
 
     public bool IsCompleted => introCompleted;
     public VideoClip OpeningClip => openingClip;
@@ -74,6 +91,7 @@ public sealed class AssaultBattleIntro : MonoBehaviour
     private void OnDestroy()
     {
         UnsubscribeVideoEvents();
+        RestoreHiddenCanvases();
         ReleaseRenderTexture();
     }
 
@@ -104,6 +122,8 @@ public sealed class AssaultBattleIntro : MonoBehaviour
     private void PrepareOpeningVideo()
     {
         EnsureVideoView();
+        HideExistingCanvases();
+        loadingOverlay?.Show();
         CreateRenderTexture();
 
         videoPlayer.playOnAwake = false;
@@ -126,7 +146,10 @@ public sealed class AssaultBattleIntro : MonoBehaviour
     private void EnsureVideoView()
     {
         if (videoGroup != null && videoImage != null)
+        {
+            loadingOverlay = AssaultOpeningLoadingOverlay.Create(videoGroup.transform);
             return;
+        }
 
         GameObject canvasObject = new GameObject(
             "Assault Opening Video",
@@ -139,7 +162,8 @@ public sealed class AssaultBattleIntro : MonoBehaviour
 
         Canvas canvas = canvasObject.GetComponent<Canvas>();
         canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-        canvas.sortingOrder = 40000;
+        canvas.overrideSorting = true;
+        canvas.sortingOrder = OverlaySortingOrder;
 
         CanvasScaler scaler = canvasObject.GetComponent<CanvasScaler>();
         scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
@@ -164,6 +188,7 @@ public sealed class AssaultBattleIntro : MonoBehaviour
         videoImage = videoObject.GetComponent<RawImage>();
         videoImage.color = Color.white;
         videoImage.raycastTarget = false;
+        loadingOverlay = AssaultOpeningLoadingOverlay.Create(canvasObject.transform);
     }
 
     private static GameObject CreateFullscreenGraphic<T>(
@@ -228,7 +253,47 @@ public sealed class AssaultBattleIntro : MonoBehaviour
             prepareTimeoutRoutine = null;
         }
 
+        bool muteVideoAudio = CombatAudio.IsMasterMuted;
+        for (ushort track = 0; track < preparedPlayer.audioTrackCount; track++)
+        {
+            preparedPlayer.EnableAudioTrack(track, true);
+            preparedPlayer.SetDirectAudioMute(track, muteVideoAudio);
+            preparedPlayer.SetDirectAudioVolume(track, muteVideoAudio ? 0f : 1f);
+        }
+
+        if (beginPlaybackRoutine != null)
+            StopCoroutine(beginPlaybackRoutine);
+        beginPlaybackRoutine = StartCoroutine(
+            BeginPreparedPlayback(preparedPlayer));
+    }
+
+    private IEnumerator BeginPreparedPlayback(VideoPlayer preparedPlayer)
+    {
+        float minimumDuration = Mathf.Max(
+            MinimumVisibleLoadingSeconds,
+            minimumLoadingDuration);
+        while (!finishRequested &&
+               loadingOverlay != null &&
+               loadingOverlay.VisibleDuration < minimumDuration)
+        {
+            yield return null;
+        }
+
+        if (finishRequested)
+        {
+            beginPlaybackRoutine = null;
+            yield break;
+        }
+
+        loadingOverlay?.MarkReady();
         preparedPlayer.Play();
+        yield return null;
+
+        if (loadingOverlay != null)
+            yield return loadingOverlay.FadeOut(
+                Mathf.Max(MinimumLoadingFadeSeconds, loadingFadeDuration));
+
+        beginPlaybackRoutine = null;
     }
 
     private void OnVideoFinished(VideoPlayer finishedPlayer)
@@ -310,13 +375,37 @@ public sealed class AssaultBattleIntro : MonoBehaviour
         introCompleted = true;
         finishRequested = true;
         UnsubscribeVideoEvents();
+        if (beginPlaybackRoutine != null)
+        {
+            StopCoroutine(beginPlaybackRoutine);
+            beginPlaybackRoutine = null;
+        }
+        loadingOverlay?.HideImmediate();
         SetVideoVisible(false, 0f);
+        RestoreHiddenCanvases();
         ReleaseRenderTexture();
+        AlignCameraBehindCurrentCharacter();
 
         // 오프닝 종료는 전투 시작이 아니라 맵 탐색 허용이다. 실제 보스 생성과 타이머는 기존 트리거가 담당한다.
         battleController?.SetBattleEntryEnabled(true);
         partyManager?.SetPartyControlEnabled(true);
         IntroFinished?.Invoke();
+    }
+
+    private void AlignCameraBehindCurrentCharacter()
+    {
+        PlayerController currentPlayer = partyManager != null
+            ? partyManager.GetCurrentCharacter()
+            : null;
+        ThirdPersonCameraController cameraController = ThirdPersonCameraController.Active;
+
+        if (currentPlayer == null || cameraController == null)
+            return;
+
+        if (currentPlayer.CameraFollowTarget != null)
+            cameraController.SetTarget(currentPlayer.CameraFollowTarget);
+
+        cameraController.SnapBehindTarget(currentPlayer.transform);
     }
 
     private void ReleaseRenderTexture()
@@ -343,5 +432,43 @@ public sealed class AssaultBattleIntro : MonoBehaviour
         videoGroup.interactable = false;
         videoGroup.blocksRaycasts = visible;
         videoGroup.gameObject.SetActive(visible);
+    }
+
+    private void HideExistingCanvases()
+    {
+        RestoreHiddenCanvases();
+
+        Canvas openingCanvas = videoGroup != null
+            ? videoGroup.GetComponentInParent<Canvas>()
+            : null;
+        Canvas[] canvases = FindObjectsByType<Canvas>(
+            FindObjectsInactive.Exclude,
+            FindObjectsSortMode.None);
+
+        for (int i = 0; i < canvases.Length; i++)
+        {
+            Canvas canvas = canvases[i];
+            if (canvas == null ||
+                canvas == openingCanvas ||
+                !canvas.isActiveAndEnabled)
+            {
+                continue;
+            }
+
+            hiddenCanvases.Add(canvas);
+            canvas.enabled = false;
+        }
+    }
+
+    private void RestoreHiddenCanvases()
+    {
+        for (int i = 0; i < hiddenCanvases.Count; i++)
+        {
+            Canvas canvas = hiddenCanvases[i];
+            if (canvas != null)
+                canvas.enabled = true;
+        }
+
+        hiddenCanvases.Clear();
     }
 }

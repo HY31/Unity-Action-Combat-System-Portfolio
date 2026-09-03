@@ -1,5 +1,8 @@
 using UnityEngine;
 
+/// <summary>
+/// 플레이어가 전투 구역에 진입하면 보스를 활성화하고 강습전 타이머를 한 번만 시작한다.
+/// </summary>
 [DisallowMultipleComponent]
 [RequireComponent(typeof(BoxCollider), typeof(Rigidbody))]
 public sealed class AssaultBattleStartTrigger : MonoBehaviour

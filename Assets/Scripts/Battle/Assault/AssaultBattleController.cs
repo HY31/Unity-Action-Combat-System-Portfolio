@@ -15,6 +15,10 @@ public enum AssaultBattleEndReason
     PartyDefeated
 }
 
+/// <summary>
+/// 보스 등장부터 3분 타이머, 피해 비례 점수, 조작 점수와 최종 결과 확정까지 강습전 규칙을 관리한다.
+/// UI는 공개 이벤트와 최종 결과 스냅샷만 구독한다.
+/// </summary>
 [DisallowMultipleComponent]
 public sealed class AssaultBattleController : MonoBehaviour
 {
