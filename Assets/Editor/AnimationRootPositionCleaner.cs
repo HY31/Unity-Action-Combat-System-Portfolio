@@ -9,13 +9,18 @@ using UnityEngine;
 
 public static class AnimationRootPositionCleaner
 {
-    private const string MenuPath = "Tools/Animation/Remove Corin and Butcher Root Position";
+    private const string MenuPath = "Tools/Animation/Remove Character and Butcher Root Position";
+    private const string PlayerCharacterMenuPath =
+        "Tools/Animation/Remove Corin and Jane Root Position";
     private const string RootBoneName = "Bip001";
+    private const string ModelRootTransformName = "Root";
     // 일부 추출 클립은 Bip001 경로를 CRC32 자리표시자로 저장한다.
     private const string HashedRootBonePath = "path_2797366333";
     private const string CorinPrefabPath = "Assets/Prefabs/Players/Corin.prefab";
     private const string CorinClipFolder =
         "Assets/ImportedCharacters/Corin/AnimationClip_Selected";
+    private const string JaneClipFolder =
+        "Assets/ImportedCharacters/Jane_Doe/AnimationClip_Selected";
     private const string ButcherModelPath =
         "Assets/ThirdParty/ZZZ_DeadEndButcher/Models/Monster_NotoriousDeadEndButcher_P1.fbx";
     private const string ButcherClipFolder =
@@ -37,6 +42,27 @@ public static class AnimationRootPositionCleaner
         }
     }
 
+    [MenuItem(PlayerCharacterMenuPath)]
+    public static void CleanPlayerCharactersNow()
+    {
+        try
+        {
+            CleanupResult result = new CleanupResult();
+            RepairCorinHashedBindings(result);
+            CleanCorinClips(result);
+            CleanJaneClips(result);
+
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+            ValidatePlayerCharacterResult(result);
+            Debug.Log(result.ToPlayerCharacterLogMessage());
+        }
+        catch (Exception exception)
+        {
+            Debug.LogException(exception);
+        }
+    }
+
     [MenuItem(MenuPath, true)]
     private static bool ValidateCleanNow()
     {
@@ -45,11 +71,18 @@ public static class AnimationRootPositionCleaner
             && !EditorApplication.isUpdating;
     }
 
+    [MenuItem(PlayerCharacterMenuPath, true)]
+    private static bool ValidateCleanPlayerCharactersNow()
+    {
+        return ValidateCleanNow();
+    }
+
     private static CleanupResult CleanAll()
     {
         CleanupResult result = new CleanupResult();
         RepairCorinHashedBindings(result);
         CleanCorinClips(result);
+        CleanJaneClips(result);
         Dictionary<AnimationClip, AnimationClip> butcherClipMap =
             BuildButcherInPlaceClips(result);
         ReplaceControllerMotions(butcherClipMap, result);
@@ -232,6 +265,24 @@ public static class AnimationRootPositionCleaner
         }
     }
 
+    private static void CleanJaneClips(CleanupResult result)
+    {
+        string[] clipGuids = AssetDatabase.FindAssets(
+            "t:AnimationClip",
+            new[] { JaneClipFolder });
+
+        foreach (string guid in clipGuids)
+        {
+            string path = AssetDatabase.GUIDToAssetPath(guid);
+            AnimationClip clip = AssetDatabase.LoadAssetAtPath<AnimationClip>(path);
+            if (clip == null || !path.EndsWith(".anim", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            result.JaneClipCount++;
+            result.RemovedJaneCurves += RemoveRootPositionCurves(clip);
+        }
+    }
+
     private static Dictionary<AnimationClip, AnimationClip> BuildButcherInPlaceClips(
         CleanupResult result)
     {
@@ -300,6 +351,10 @@ public static class AnimationRootPositionCleaner
         bool isRootPath = string.Equals(
                 binding.path,
                 RootBoneName,
+                StringComparison.Ordinal)
+            || string.Equals(
+                binding.path,
+                ModelRootTransformName,
                 StringComparison.Ordinal)
             || string.Equals(
                 binding.path,
@@ -415,6 +470,17 @@ public static class AnimationRootPositionCleaner
                 failures.Add(path);
         }
 
+        string[] janeClipGuids = AssetDatabase.FindAssets(
+            "t:AnimationClip",
+            new[] { JaneClipFolder });
+        foreach (string guid in janeClipGuids)
+        {
+            string path = AssetDatabase.GUIDToAssetPath(guid);
+            AnimationClip clip = AssetDatabase.LoadAssetAtPath<AnimationClip>(path);
+            if (clip != null && CountRootPositionBindings(clip) > 0)
+                failures.Add(path);
+        }
+
         string[] butcherClipGuids = AssetDatabase.FindAssets(
             "t:AnimationClip",
             new[] { ButcherClipFolder });
@@ -441,6 +507,39 @@ public static class AnimationRootPositionCleaner
         }
 
         result.ValidationPassed = true;
+    }
+
+    private static void ValidatePlayerCharacterResult(CleanupResult result)
+    {
+        List<string> failures = new List<string>();
+        FindRootPositionFailures(CorinClipFolder, failures);
+        FindRootPositionFailures(JaneClipFolder, failures);
+
+        if (failures.Count > 0)
+        {
+            throw new InvalidOperationException(
+                "플레이어 애니메이션 루트 위치 제거 검증에 실패했습니다:\n"
+                + string.Join("\n", failures.Distinct()));
+        }
+
+        result.ValidationPassed = true;
+    }
+
+    private static void FindRootPositionFailures(
+        string clipFolder,
+        ICollection<string> failures)
+    {
+        string[] clipGuids = AssetDatabase.FindAssets(
+            "t:AnimationClip",
+            new[] { clipFolder });
+
+        foreach (string guid in clipGuids)
+        {
+            string path = AssetDatabase.GUIDToAssetPath(guid);
+            AnimationClip clip = AssetDatabase.LoadAssetAtPath<AnimationClip>(path);
+            if (clip != null && CountRootPositionBindings(clip) > 0)
+                failures.Add(path);
+        }
     }
 
     private static int CountRootPositionBindings(AnimationClip clip)
@@ -509,12 +608,14 @@ public static class AnimationRootPositionCleaner
     private sealed class CleanupResult
     {
         internal int CorinClipCount;
+        internal int JaneClipCount;
         internal int CorinUltimateClipCount;
         internal int RepairedCorinBindings;
         internal int UnresolvedCorinBindings;
         internal int ButcherClipCount;
         internal int CreatedButcherClips;
         internal int RemovedCorinCurves;
+        internal int RemovedJaneCurves;
         internal int RemovedButcherCurves;
         internal int ReplacedControllerMotions;
         internal bool ValidationPassed;
@@ -522,13 +623,24 @@ public static class AnimationRootPositionCleaner
         internal string ToLogMessage()
         {
             return
-                "코린/도살자 애니메이션 루트 위치 제거 완료.\n" +
+                "코린/제인/도살자 애니메이션 루트 위치 제거 완료.\n" +
                 $"코린: {CorinClipCount}개 클립, {RemovedCorinCurves}개 위치 곡선 제거\n" +
+                $"제인: {JaneClipCount}개 클립, {RemovedJaneCurves}개 위치 곡선 제거\n" +
                 $"코린 궁극기: {CorinUltimateClipCount}개 클립, {RepairedCorinBindings}개 본 바인딩 복구, " +
                 $"미해결 {UnresolvedCorinBindings}개\n" +
                 $"도살자: {ButcherClipCount}개 클립, {CreatedButcherClips}개 편집용 클립 생성, " +
                 $"{RemovedButcherCurves}개 위치 곡선 제거\n" +
                 $"Animator 교체: {ReplacedControllerMotions}개\n" +
+                $"검증: {(ValidationPassed ? "통과" : "실패")}";
+        }
+        internal string ToPlayerCharacterLogMessage()
+        {
+            return
+                "코린/제인 애니메이션 루트 위치 제거 완료.\n" +
+                $"코린: {CorinClipCount}개 클립, {RemovedCorinCurves}개 위치 곡선 제거\n" +
+                $"제인: {JaneClipCount}개 클립, {RemovedJaneCurves}개 위치 곡선 제거\n" +
+                $"코린 궁극기: {CorinUltimateClipCount}개 클립, {RepairedCorinBindings}개 본 바인딩 복구, " +
+                $"미해결 {UnresolvedCorinBindings}개\n" +
                 $"검증: {(ValidationPassed ? "통과" : "실패")}";
         }
     }
