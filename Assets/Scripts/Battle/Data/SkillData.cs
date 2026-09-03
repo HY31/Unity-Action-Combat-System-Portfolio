@@ -1,5 +1,8 @@
 using UnityEngine;
 
+/// <summary>
+/// 특수 스킬 한 단계의 자원 소비, 판정, 이동과 후속 스킬 연결 규칙을 정의한다.
+/// </summary>
 [CreateAssetMenu(menuName = "Combat/Skill Data")]
 public class SkillData : ScriptableObject
 {
@@ -10,10 +13,6 @@ public class SkillData : ScriptableObject
     [Header("Resource")]
     public float requiredEntryEnergy = 0f;
     public float energyCost = 40f;
-
-    [Header("Damage")]
-    public float damageMultiplier = 1f;
-    public float impactMultiplier = 1f;
 
     [Header("Hit")]
     public HitPayload hitPayload;
@@ -45,7 +44,8 @@ public class SkillData : ScriptableObject
     [Tooltip("이 시점부터 이동 입력이 현재 스킬의 후속 동작을 취소할 수 있다.")]
     [Range(0f, 1f)] public float locomotionCancelOpenTime = 0.75f;
 
-    [Header("Chain")] // 엘렌은 강화 특수 스킬 이후 추가적으로 에너지를 조금 써서 스킬 : 샤크나미 사용 가능 하기에 콤보 구현
+    [Header("Chain")]
+    [Tooltip("현재 스킬이 끝난 뒤 추가 입력으로 연결할 다음 스킬입니다. 비어 있으면 단일 스킬로 종료합니다.")]
     public SkillData nextSkill;
 
 

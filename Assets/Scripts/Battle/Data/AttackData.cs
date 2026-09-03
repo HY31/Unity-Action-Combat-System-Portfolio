@@ -1,5 +1,8 @@
 using UnityEngine;
 
+/// <summary>
+/// 일반 공격 한 단계의 애니메이션 구간, 판정, 이동과 캔슬 규칙을 정의한다.
+/// </summary>
 [CreateAssetMenu(menuName = "Combat/Attack Data")]
 public class AttackData : ScriptableObject
 {
@@ -24,10 +27,6 @@ public class AttackData : ScriptableObject
 
     [Tooltip("이 시점부터 이동 입력이 현재 공격의 후속 동작을 취소할 수 있다.")]
     [Range(0f, 1f)] public float locomotionCancelOpenTime = 0.7f;
-
-    [Header("Damage")]
-    public float damageMultiplier = 1f;
-    public float impactMultiplier = 1f;
 
     [Header("Hit")]
     public HitPayload hitPayload;

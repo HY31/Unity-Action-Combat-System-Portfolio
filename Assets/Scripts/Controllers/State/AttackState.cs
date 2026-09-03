@@ -1,7 +1,15 @@
 using UnityEngine;
 
+/// <summary>
+/// 일반 공격 콤보의 애니메이션 구간, 히트박스, 자동 조준과 후속 입력 버퍼를 처리한다.
+/// </summary>
 public class AttackState : IPlayerState
 {
+    private const float EntryBlendDuration = 0.08f;
+    private const float ComboBlendDuration = 0.1f;
+    private const float RecoveryBlendDuration = 0.1f;
+    private const float InputBufferDuration = 0.35f;
+
     private enum AttackPhase
     {
         Attack,
@@ -15,14 +23,17 @@ public class AttackState : IPlayerState
 
     private int comboIndex;
 
-    // 현재 공격 중 입력된 다음 평타를 콤보 허용 시점까지 한 번만 예약한다.
+    // 현재 공격 중 입력된 다음 평타를 콤보 허용 시점까지 잠시 예약한다.
     private bool bufferedAttackInput;
+    private float bufferedAttackTimer;
 
-    // 평타 중 들어온 스킬 입력을 해당 공격의 스킬 캔슬 허용 시점까지 보관한다.
+    // 평타 중 들어온 스킬 입력을 해당 공격의 스킬 캔슬 허용 시점까지 잠시 보관한다.
     private bool bufferedSkillInput;
+    private float bufferedSkillTimer;
 
-    // 평타 중 들어온 회피 입력을 해당 공격의 회피 캔슬 허용 시점까지 보관한다.
+    // 평타 중 들어온 회피 입력을 해당 공격의 회피 캔슬 허용 시점까지 잠시 보관한다.
     private bool bufferedDodgeInput;
+    private float bufferedDodgeTimer;
 
     private bool hitboxActive;
     private HitBox hitBox;
@@ -30,6 +41,7 @@ public class AttackState : IPlayerState
     private Transform assistTarget;
     private Vector3 attackAssistDirection;
     private bool hasAttackAssist;
+    private float assistStopDistance;
     private float previousMovementTime;
     private float baseAnimatorSpeed = 1f;
     private bool attackSwingPlayed;
@@ -43,9 +55,7 @@ public class AttackState : IPlayerState
     {
         baseAnimatorSpeed = player.Animator != null ? player.Animator.speed : 1f;
         comboIndex = 0;
-        bufferedAttackInput = false;
-        bufferedSkillInput = false;
-        bufferedDodgeInput = false;
+        ResetBufferedInputs();
         hitboxActive = false;
         previousMovementTime = 0f;
         ClearAttackAssist();
@@ -65,6 +75,8 @@ public class AttackState : IPlayerState
 
     public void Update()
     {
+        UpdateInputBuffers();
+
         AnimatorStateInfo info = player.Animator.GetCurrentAnimatorStateInfo(0);
 
         if (phase == AttackPhase.Attack)
@@ -83,9 +95,7 @@ public class AttackState : IPlayerState
         if (player.Animator != null)
             player.Animator.speed = baseAnimatorSpeed;
 
-        bufferedAttackInput = false;
-        bufferedSkillInput = false;
-        bufferedDodgeInput = false;
+        ResetBufferedInputs();
         hitboxActive = false;
         previousMovementTime = 0f;
         ClearAttackAssist();
@@ -96,12 +106,14 @@ public class AttackState : IPlayerState
     {
         // 현재 공격이 끝나기 전에 들어온 평타를 다음 콤보 1회로 예약한다.
         bufferedAttackInput = true;
+        bufferedAttackTimer = InputBufferDuration;
     }
 
     public void HandleDodge()
     {
         // 입력 순간 PlayerController가 결정한 일반/극한 회피 타입과 함께 회피 실행을 예약한다.
         bufferedDodgeInput = true;
+        bufferedDodgeTimer = InputBufferDuration;
     }
 
     public void HandleHit()
@@ -113,6 +125,7 @@ public class AttackState : IPlayerState
     {
         // 캔슬 허용 시점보다 일찍 들어온 스킬 입력도 한 번 예약한다.
         bufferedSkillInput = true;
+        bufferedSkillTimer = InputBufferDuration;
     }
     public void HandleUltimate()
     {
@@ -124,7 +137,7 @@ public class AttackState : IPlayerState
     }
     #endregion
 
-    private void StartAttack(AttackData attackData)
+    private void StartAttack(AttackData attackData, bool isComboTransition = false)
     {
         currentAttack = attackData;
         phase = AttackPhase.Attack;
@@ -151,10 +164,10 @@ public class AttackState : IPlayerState
             hitReactionBuildUp = currentAttack.hitPayload.hitReactionBuildUp,
             resolvedElement = resolvedElement,
             anomalyBuildUp = currentAttack.hitPayload.anomalyBuildUp,
-            canTriggerChainSkill = currentAttack.hitPayload.canTriggerChainSkill
+            canTriggerChainSkill = false
         };
 
-        hitBox.SetRewardType(DecibelRewardType.NormalAttack);
+        hitBox.SetRewardType(CombatHitRewardType.NormalAttack);
         hitBox.SetHitData(hitData);
         hitBox.SetFeedback(currentAttack.hitFeedback);
         hitBox.ConfigureShape(currentAttack.hitBoxShape);
@@ -165,7 +178,10 @@ public class AttackState : IPlayerState
             ? currentAttack.playbackSpeed
             : 1f;
         player.Animator.speed = baseAnimatorSpeed * playbackSpeed;
-        player.Animator.CrossFade(currentAttack.attackAnim, 0.05f);
+        float blendDuration = isComboTransition
+            ? ComboBlendDuration
+            : EntryBlendDuration;
+        player.Animator.CrossFade(currentAttack.attackAnim, blendDuration);
     }
 
     private void UpdateAttackPhase(AnimatorStateInfo info)
@@ -206,7 +222,7 @@ public class AttackState : IPlayerState
         {
             SetHitBoxActive(false);
             phase = AttackPhase.End;
-            player.Animator.CrossFade(currentAttack.endAnim, 0.05f);
+            player.Animator.CrossFade(currentAttack.endAnim, RecoveryBlendDuration);
         }
     }
 
@@ -220,7 +236,10 @@ public class AttackState : IPlayerState
             return;
 
         attackSwingPlayed = true;
-        CombatAudio.PlayAttackSwing(currentAttack.hitPayload.impactMultiplier);
+        CombatAudio.PlayNormalAttack(
+            player,
+            comboIndex,
+            currentAttack.hitPayload.impactMultiplier);
     }
 
     private void UpdateEndPhase(AnimatorStateInfo info)
@@ -230,6 +249,10 @@ public class AttackState : IPlayerState
             return;
 
         if (TryCancelToSkill(1f))
+            return;
+
+        // 마지막 타격 뒤에 예약된 평타는 버리지 않고 첫 타부터 새 콤보를 시작한다.
+        if (TryRestartComboSequence())
             return;
 
         if (TryCancelToLocomotion(1f))
@@ -253,6 +276,7 @@ public class AttackState : IPlayerState
             return false;
 
         bufferedDodgeInput = false;
+        bufferedDodgeTimer = 0f;
 
         player.ChangeState(player.DodgeState);
         return true;
@@ -269,23 +293,10 @@ public class AttackState : IPlayerState
 
         // 같은 예약이 이후 프레임에서 다시 실행되지 않도록 상태 전환 전에 소비한다.
         bufferedSkillInput = false;
+        bufferedSkillTimer = 0f;
 
         player.ChangeState(player.SkillState);
         return true;
-    }
-
-    private bool HasValidBufferedCombo()
-    {
-        if (!bufferedAttackInput)
-            return false;
-
-        if (player.CharacterData.normalCombo == null)
-            return false;
-
-        int nextIndex = currentAttack.nextComboIndex;
-
-        return nextIndex >= 0 &&
-            nextIndex < player.CharacterData.normalCombo.Length;
     }
 
     private bool TryCancelToLocomotion(float normalizedTime)
@@ -293,8 +304,8 @@ public class AttackState : IPlayerState
         if (normalizedTime < currentAttack.locomotionCancelOpenTime)
             return false;
 
-        // 다음 평타가 유효하게 예약되어 있다면 이동보다 콤보를 우선한다.
-        if (HasValidBufferedCombo())
+        // 다음 콤보 또는 새 콤보 시작이 예약되어 있다면 이동보다 공격을 우선한다.
+        if (bufferedAttackInput)
             return false;
 
         // 이동은 지속 입력이므로 별도의 버튼 버퍼를 만들지 않고 현재 입력을 확인한다.
@@ -310,23 +321,92 @@ public class AttackState : IPlayerState
         if (!bufferedAttackInput)
             return false;
 
-        // 예약은 다음 콤보의 존재 여부와 관계없이 한 번만 소비한다.
-        bufferedAttackInput = false;
-
         int nextIndex = currentAttack.nextComboIndex;
 
         if (nextIndex < 0 || nextIndex >= player.CharacterData.normalCombo.Length)
             return false;
 
+        bufferedAttackInput = false;
+        bufferedAttackTimer = 0f;
         comboIndex = nextIndex;
-        StartAttack(player.CharacterData.normalCombo[comboIndex]);
+        StartAttack(player.CharacterData.normalCombo[comboIndex], true);
         return true;
+    }
+
+    private bool TryRestartComboSequence()
+    {
+        if (!bufferedAttackInput)
+            return false;
+
+        AttackData[] combo = player.CharacterData.normalCombo;
+        if (combo == null || combo.Length == 0 || combo[0] == null)
+        {
+            bufferedAttackInput = false;
+            bufferedAttackTimer = 0f;
+            return false;
+        }
+
+        bufferedAttackInput = false;
+        bufferedAttackTimer = 0f;
+        comboIndex = 0;
+        StartAttack(combo[comboIndex], true);
+        return true;
+    }
+
+    private void UpdateInputBuffers()
+    {
+        float deltaTime = player.ActionDeltaTime;
+        UpdateBufferedInput(
+            ref bufferedAttackInput,
+            ref bufferedAttackTimer,
+            deltaTime);
+        UpdateBufferedInput(
+            ref bufferedSkillInput,
+            ref bufferedSkillTimer,
+            deltaTime);
+        UpdateBufferedInput(
+            ref bufferedDodgeInput,
+            ref bufferedDodgeTimer,
+            deltaTime);
+    }
+
+    private static void UpdateBufferedInput(
+        ref bool bufferedInput,
+        ref float remaining,
+        float deltaTime)
+    {
+        if (!bufferedInput)
+            return;
+
+        remaining -= deltaTime;
+        if (remaining > 0f)
+            return;
+
+        bufferedInput = false;
+        remaining = 0f;
+    }
+
+    private void ResetBufferedInputs()
+    {
+        bufferedAttackInput = false;
+        bufferedAttackTimer = 0f;
+        bufferedSkillInput = false;
+        bufferedSkillTimer = 0f;
+        bufferedDodgeInput = false;
+        bufferedDodgeTimer = 0f;
     }
 
     private void SetHitBoxActive(bool active)
     {
         if (hitBox == null)
             return;
+
+        // 평타 데이터는 타격 구간이 하나이므로 이 구간이 해당 공격의 마지막 타격이다.
+        bool isFinishingHeavyHit =
+            active &&
+            currentAttack != null &&
+            currentAttack.hitPayload.canTriggerChainSkill;
+        hitBox.SetChainSkillTriggerEnabled(isFinishingHeavyHit);
 
         if (hitboxActive == active)
             return;
@@ -349,6 +429,10 @@ public class AttackState : IPlayerState
 
         if (assistTarget == null)
             return;
+
+        assistStopDistance = player.ResolveAttackStopDistance(
+            assistTarget,
+            currentAttack.autoAimStopDistance);
 
         attackAssistDirection = player.GetAttackAssistDirection(assistTarget);
 
@@ -450,7 +534,7 @@ public class AttackState : IPlayerState
         toTarget.y = 0f;
 
         float distanceAlongMove = Vector3.Dot(toTarget, moveDirection);
-        float remainingDistance = distanceAlongMove - currentAttack.autoAimStopDistance;
+        float remainingDistance = distanceAlongMove - assistStopDistance;
 
         return Mathf.Clamp(requestedDistance, 0f, Mathf.Max(0f, remainingDistance));
     }
@@ -460,6 +544,7 @@ public class AttackState : IPlayerState
         assistTarget = null;
         attackAssistDirection = Vector3.zero;
         hasAttackAssist = false;
+        assistStopDistance = 0f;
     }
 }
 

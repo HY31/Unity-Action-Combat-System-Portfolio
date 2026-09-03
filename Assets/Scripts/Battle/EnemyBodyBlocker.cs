@@ -9,8 +9,10 @@ using UnityEngine;
 public sealed class EnemyBodyBlocker : MonoBehaviour
 {
     [SerializeField] private PartyManager partyManager;
-    [SerializeField, Min(0.1f)] private float horizontalRadius = 2f;
+    [SerializeField, Min(0.1f)] private float horizontalRadius = 2.6f;
     [SerializeField] private Collider legacyBodyCollider;
+
+    public float MinimumHorizontalDistance => Mathf.Max(0.1f, horizontalRadius);
 
     private void Awake()
     {

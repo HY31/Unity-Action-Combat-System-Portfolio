@@ -1,5 +1,8 @@
 using UnityEngine;
 
+/// <summary>
+/// 피격 애니메이션이 끝날 때까지 다른 플레이어 입력을 차단하는 강제 상태다.
+/// </summary>
 public class HitState : IPlayerState, IUltimateBlockingState
 {
     private PlayerController player;
@@ -41,31 +44,25 @@ public class HitState : IPlayerState, IUltimateBlockingState
     #region Handle
     public void HandleAttack()
     {
-        // player.ChangeState(player.AttackState);
     }
 
     public void HandleDodge()
     {
-        // player.ChangeState(player.DodgeState);
     }
 
     public void HandleHit()
     {
-        // player.ChangeState(player.HitState);
     }
 
     public void HandleSkill()
     {
-        // player.ChangeState(player.SkillState);
     }
     public void HandleUltimate()
     {
-        // player.ChangeState(player.UltimateState);
     }
 
     public void HandleParry()
     {
-        // player.ChangeState(player.SupportState);
     }
     #endregion
 }

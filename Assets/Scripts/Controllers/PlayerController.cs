@@ -1,9 +1,12 @@
-﻿using TMPro;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using static IPlayerState;
 
 
+/// <summary>
+/// 캐릭터의 스탯·자원·입력·공용 히트박스를 소유하고 모든 플레이어 상태 전이를 한 경로로 통제한다.
+/// 개별 행동의 타이밍과 판정은 각 IPlayerState 구현에 위임한다.
+/// </summary>
 public class PlayerController : MonoBehaviour
 {
     private CharacterController controller;
@@ -12,7 +15,10 @@ public class PlayerController : MonoBehaviour
     [SerializeField] private CharacterData characterData;
     public CharacterData CharacterData => characterData;
 
-    public bool IsInvincible { get; private set; }
+    private bool stateInvincible;
+    private float timedInvincibilityRemaining;
+    public bool IsInvincible =>
+        stateInvincible || timedInvincibilityRemaining > 0f;
 
     private bool usesUnscaledActionTime;
     private float unscaledActionTimeRemaining;
@@ -106,13 +112,29 @@ public class PlayerController : MonoBehaviour
     [SerializeField] private float maxEnergy = 100f;
     [SerializeField] private float currentEnergy = 20f;
     [SerializeField] private float energyRecoveryRate = 1.2f;
+    [SerializeField, Min(0f)] private float normalAttackEnergyGain = 2f;
+    [SerializeField, Min(0f)] private float skillEnergyGain = 4f;
     public float MaxEnergy => maxEnergy;
     public float CurrentEnergy => currentEnergy;
     public float EnergyRecoveryRate => energyRecoveryRate;
     public event System.Action<PlayerController> EnergyChanged;
+    public float EnhancedSkillEnergyRequirement
+    {
+        get
+        {
+            SkillData enhancedSkill = characterData != null
+                ? characterData.enhancedSkillBranch
+                : null;
+            return enhancedSkill != null
+                ? Mathf.Max(enhancedSkill.requiredEntryEnergy, enhancedSkill.energyCost)
+                : 0f;
+        }
+    }
+
     public bool IsEnhancedBranchReady =>
+        characterData != null &&
         characterData.enhancedSkillBranch != null &&
-        currentEnergy >= characterData.enhancedSkillBranch.requiredEntryEnergy;
+        currentEnergy >= EnhancedSkillEnergyRequirement;
 
     [Header("Attack HitBox")]
     [SerializeField] private HitBox attackHitBox;
@@ -130,15 +152,10 @@ public class PlayerController : MonoBehaviour
     public bool CanUseUltimate => currentDecibel >= maxDecibel;
     public event System.Action<PlayerController> DecibelChanged;
 
-    public TMP_Text decibelText_temp;
-
-
     [Header("SupportPoint")]
     [SerializeField] private SupportPointManager supportPointManager;
     public SupportPointManager SupportPointManager => supportPointManager;
     public int CurrentSupportPoint => supportPointManager != null ? supportPointManager.CurrentSupportPoint : 0;
-
-    public TMP_Text supportPointText_temp;
 
     [Header("Animation")]
     public Animator Animator { get; private set; }
@@ -147,14 +164,21 @@ public class PlayerController : MonoBehaviour
 
     private void Awake()
     {
+        EnsureInitialized();
+    }
+
+    public bool EnsureInitialized()
+    {
+        if (isInitialized)
+            return true;
+
         controller = GetComponent<CharacterController>();
         Animator = GetComponent<Animator>();
-
         if (characterData == null)
         {
             Debug.LogError("캐릭터 데이터가 없습니다.", this);
             enabled = false;
-            return;
+            return false;
         }
 
         if (characterData.statData == null || !characterData.statData.HasUsableStats)
@@ -162,7 +186,7 @@ public class PlayerController : MonoBehaviour
             // 빈 스탯 데이터는 모든 전투 수치를 0으로 만들어도 컴파일 오류가 나지 않으므로 시작 시 명시적으로 차단한다.
             Debug.LogError($"'{characterData.characterName}'의 레벨별 전투 스탯이 없습니다.", this);
             enabled = false;
-            return;
+            return false;
         }
 
         // 파티 HUD와 전투 판정이 같은 런타임 체력 원본을 사용하도록 시작 시 최대 체력으로 초기화한다.
@@ -177,6 +201,7 @@ public class PlayerController : MonoBehaviour
         ParryState = new SupportState(this);
 
         isInitialized = true;
+        return true;
     }
 
     private void Start()
@@ -191,22 +216,19 @@ public class PlayerController : MonoBehaviour
     private void Update()
     {
         UpdateUnscaledActionTime();
+        UpdateTimedInvincibility();
 
-        if (ChainSkillPromptUI.IsAnyOpen)
+        if (ChainSkillPromptUI.IsAnyOpen || UltimateCinematicPlayer.IsPlaying)
             MoveInput = Vector2.zero;
 
         currentState?.Update();
 
-        if (decibelText_temp != null)
-            decibelText_temp.text = currentDecibel.ToString("F0");
-
-        if (supportPointText_temp != null && supportPointManager != null)
-            supportPointText_temp.text = supportPointManager.CurrentSupportPoint.ToString("F0");
     }
 
     private void OnDisable()
     {
         EndUnscaledActionTime();
+        ClearInvincibility();
     }
 
     public void BeginUnscaledActionTime(float duration)
@@ -237,7 +259,8 @@ public class PlayerController : MonoBehaviour
             EndUnscaledActionTime();
     }
 
-    private void EndUnscaledActionTime()
+    // 외부 일시정지 중 진행하던 행동이 끝나면 Animator와 시간 기준을 진입 전 상태로 되돌린다.
+    public void EndUnscaledActionTime()
     {
         if (!usesUnscaledActionTime)
             return;
@@ -355,7 +378,7 @@ public class PlayerController : MonoBehaviour
         currentState?.Exit();
         currentState = null;
         attackHitBox?.SetActive(false);
-        IsInvincible = false;
+        ClearInvincibility();
         enabled = false;
     }
 
@@ -522,14 +545,32 @@ public class PlayerController : MonoBehaviour
         return direction.normalized;
     }
 
+    public float ResolveAttackStopDistance(Transform target, float configuredDistance)
+    {
+        float resolvedDistance = Mathf.Max(0f, configuredDistance);
+        if (target == null)
+            return resolvedDistance;
+
+        EnemyBodyBlocker bodyBlocker = target.GetComponentInParent<EnemyBodyBlocker>();
+        if (bodyBlocker == null || !bodyBlocker.isActiveAndEnabled)
+            return resolvedDistance;
+
+        // 공격 접근과 보스 몸체 보정이 같은 최소 거리를 사용해야 프레임 끝의 강제 밀어내기가 발생하지 않는다.
+        return Mathf.Max(resolvedDistance, bodyBlocker.MinimumHorizontalDistance);
+    }
+
     public void GainEnergy(float amount)
     {
         SetEnergy(currentEnergy + amount);
     }
 
-    public void RecoveryEnergyOverTime(float recoveryPerSecond)
+    public void RecoverEnergyOverTime(float deltaTime)
     {
-        SetEnergy(currentEnergy + recoveryPerSecond * ActionDeltaTime);
+        if (IsDefeated || energyRecoveryRate <= 0f)
+            return;
+
+        // 에너지 자동 회복은 FSM 상태와 분리해 공격·회피·스킬 중에도 동일하게 진행한다.
+        SetEnergy(currentEnergy + energyRecoveryRate * Mathf.Max(0f, deltaTime));
     }
 
     public bool TryUseEnergy(float cost)
@@ -581,19 +622,44 @@ public class PlayerController : MonoBehaviour
         DecibelChanged?.Invoke(this);
     }
 
-    public void GrantDecibelForNormalHit()
+    public void GrantResourcesForNormalHit()
     {
+        GainEnergy(normalAttackEnergyGain);
         GainDecibel(normalAttackDecibelGain);
     }
 
-    public void GrantDecibelForSkillHit()
+    public void GrantResourcesForSkillHit()
     {
+        GainEnergy(skillEnergyGain);
         GainDecibel(skillDecibelGain);
     }
 
     public void SetInvincible(bool value)
     {
-        IsInvincible = value;
+        stateInvincible = value;
+    }
+
+    public void GrantTimedInvincibility(float duration)
+    {
+        timedInvincibilityRemaining = Mathf.Max(
+            timedInvincibilityRemaining,
+            Mathf.Max(0f, duration));
+    }
+
+    private void UpdateTimedInvincibility()
+    {
+        if (timedInvincibilityRemaining <= 0f)
+            return;
+
+        timedInvincibilityRemaining = Mathf.Max(
+            0f,
+            timedInvincibilityRemaining - Time.unscaledDeltaTime);
+    }
+
+    private void ClearInvincibility()
+    {
+        stateInvincible = false;
+        timedInvincibilityRemaining = 0f;
     }
 
     public void SetRuntimeReferences(PartyManager party, SupportPointManager support, Transform yawPivot)
@@ -607,7 +673,7 @@ public class PlayerController : MonoBehaviour
     #region Input
     public void OnMove(InputValue value)
     {
-        if (ChainSkillPromptUI.IsAnyOpen)
+        if (ChainSkillPromptUI.IsAnyOpen || UltimateCinematicPlayer.IsPlaying)
         {
             MoveInput = Vector2.zero;
             return;
@@ -618,7 +684,7 @@ public class PlayerController : MonoBehaviour
 
     public void OnAttack(InputValue value)
     {
-        if (ChainSkillPromptUI.IsAnyOpen) return;
+        if (ChainSkillPromptUI.IsAnyOpen || UltimateCinematicPlayer.IsPlaying) return;
 
         if (value.isPressed)
             currentState?.HandleAttack();
@@ -627,7 +693,7 @@ public class PlayerController : MonoBehaviour
     public void OnDodge(InputValue value)
     {
         if (!value.isPressed) return;
-        if (ChainSkillPromptUI.IsAnyOpen) return;
+        if (ChainSkillPromptUI.IsAnyOpen || UltimateCinematicPlayer.IsPlaying) return;
 
 
         EnemyController dodgeEnemy = partyManager.FindPerfectDodgeEnemy(this);
@@ -644,13 +710,16 @@ public class PlayerController : MonoBehaviour
     }
     public void OnHitTest(InputValue value)
     {
+        if (UltimateCinematicPlayer.IsPlaying)
+            return;
+
         if (value.isPressed)
             currentState?.HandleHit();
     }
 
     public void OnSkill(InputValue value)
     {
-        if (ChainSkillPromptUI.IsAnyOpen) return;
+        if (ChainSkillPromptUI.IsAnyOpen || UltimateCinematicPlayer.IsPlaying) return;
 
         if (value.isPressed)
             currentState?.HandleSkill();
@@ -658,7 +727,7 @@ public class PlayerController : MonoBehaviour
 
     public void OnUltimate(InputValue value)
     {
-        if (ChainSkillPromptUI.IsAnyOpen)
+        if (ChainSkillPromptUI.IsAnyOpen || UltimateCinematicPlayer.IsPlaying)
             return;
 
         if (!value.isPressed)
@@ -684,7 +753,7 @@ public class PlayerController : MonoBehaviour
 
     public void OnSwitch_Nxt(InputValue value)
     {
-        if (ChainSkillPromptUI.IsAnyOpen)
+        if (ChainSkillPromptUI.IsAnyOpen || UltimateCinematicPlayer.IsPlaying)
             return;
 
         if (!value.isPressed)
@@ -701,7 +770,7 @@ public class PlayerController : MonoBehaviour
 
     public void OnSwitch_Pre(InputValue value)
     {
-        if (ChainSkillPromptUI.IsAnyOpen)
+        if (ChainSkillPromptUI.IsAnyOpen || UltimateCinematicPlayer.IsPlaying)
             return;
 
         if (!value.isPressed)

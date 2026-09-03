@@ -7,11 +7,16 @@ public enum SupportType
     PerfectDodgeSupport
 }
 
+/// <summary>
+/// 파티 순서와 활성 캐릭터를 소유하고 교체·지원·콤보 스킬 실행 및 전멸 판정을 조정한다.
+/// 비활성 대기 캐릭터의 자동 자원 회복도 이 관리자가 대신 갱신한다.
+/// </summary>
 public class PartyManager : MonoBehaviour
 {
     public PlayerController[] partyMembers;
     private int currentIndex = 0;
     private bool partyDefeatedRaised;
+    private bool partyControlEnabled = true;
     public event System.Action<PlayerController> ActiveCharacterChanged;
     public event System.Action PartyDefeated;
 
@@ -40,6 +45,14 @@ public class PartyManager : MonoBehaviour
                 return;
             }
 
+            // 비활성 대기 멤버도 먼저 초기화해야 교대 전 체력과 상태가 기본값으로 남지 않는다.
+            if (!partyMembers[i].EnsureInitialized())
+            {
+                Debug.LogError($"파티 멤버 '{partyMembers[i].name}' 초기화에 실패했습니다.", partyMembers[i]);
+                enabled = false;
+                return;
+            }
+
             partyMembers[i].Defeated -= OnMemberDefeated;
             partyMembers[i].Defeated += OnMemberDefeated;
         }
@@ -61,6 +74,20 @@ public class PartyManager : MonoBehaviour
     private void Start()
     {
         InitializeParty();
+    }
+
+    private void Update()
+    {
+        if (!partyControlEnabled || partyMembers == null)
+            return;
+
+        float deltaTime = Time.deltaTime;
+        if (deltaTime <= 0f)
+            return;
+
+        // 대기 캐릭터는 GameObject가 비활성이므로 파티 관리자가 모든 생존 멤버의 자동 회복을 갱신한다.
+        for (int i = 0; i < partyMembers.Length; i++)
+            partyMembers[i]?.RecoverEnergyOverTime(deltaTime);
     }
 
     private void InitializeParty()
@@ -144,8 +171,10 @@ public class PartyManager : MonoBehaviour
 
         cameraController.SetTarget(switchedPlayer.CameraFollowTarget);
 
+        currentPlayer.SetCombatControlEnabled(false);
         currentPlayer.gameObject.SetActive(false);
         switchedPlayer.gameObject.SetActive(true);
+        switchedPlayer.SetCombatControlEnabled(partyControlEnabled);
 
         currentIndex = targetIndex;
         ActiveCharacterChanged?.Invoke(switchedPlayer);
@@ -350,14 +379,23 @@ public class PartyManager : MonoBehaviour
 
     public void SetPartyControlEnabled(bool controlEnabled)
     {
+        partyControlEnabled = controlEnabled;
+
         if (partyMembers == null)
             return;
 
+        PlayerController currentPlayer = GetCurrentCharacter();
         for (int i = 0; i < partyMembers.Length; i++)
         {
             PlayerController member = partyMembers[i];
             if (member != null)
-                member.SetCombatControlEnabled(controlEnabled);
+            {
+                bool enableMember =
+                    controlEnabled &&
+                    member == currentPlayer &&
+                    member.gameObject.activeInHierarchy;
+                member.SetCombatControlEnabled(enableMember);
+            }
         }
     }
 

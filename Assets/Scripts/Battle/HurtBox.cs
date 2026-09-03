@@ -1,5 +1,8 @@
 using UnityEngine;
 
+/// <summary>
+/// 충돌한 HitBox를 실제 플레이어나 적 소유자에게 전달하는 공용 피격 진입점이다.
+/// </summary>
 public class HurtBox : MonoBehaviour
 {
     [SerializeField] private Transform ownerRoot;

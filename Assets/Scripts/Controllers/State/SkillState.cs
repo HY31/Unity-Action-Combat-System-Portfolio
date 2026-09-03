@@ -1,5 +1,8 @@
 using UnityEngine;
 
+/// <summary>
+/// 일반·강화 특수 스킬의 에너지 확정 시점, 무적, 판정과 후딜 캔슬을 처리한다.
+/// </summary>
 public class SkillState : IPlayerState
 {
     private enum SkillPhase
@@ -22,7 +25,9 @@ public class SkillState : IPlayerState
 
     private bool bufferedSkillInput;
     private float bufferedSkillTimer;
-    private const float BufferDuration = 0.2f;
+    private bool bufferedDodgeInput;
+    private float bufferedDodgeTimer;
+    private const float BufferDuration = 0.3f;
 
     private bool skillHitboxActive;
     private HitBox hitBox;
@@ -30,8 +35,10 @@ public class SkillState : IPlayerState
     private Transform assistTarget;
     private Vector3 attackAssistDirection;
     private bool hasAttackAssist;
+    private float assistStopDistance;
     private float previousMovementTime;
     private bool skillSwingPlayed;
+    private bool skillEndSoundPlayed;
 
     public SkillState(PlayerController player)
     {
@@ -54,6 +61,11 @@ public class SkillState : IPlayerState
             player.ChangeState(player.LocomotionState);
             return;
         }
+
+        // 강화 특수 스킬은 선딜부터 종료 모션까지 SkillState에 머무는 전체 구간을 보호한다.
+        bool isEnhancedSkill =
+            entrySkill == player.CharacterData.enhancedSkillBranch;
+        player.SetInvincible(isEnhancedSkill);
     }
 
     private void ResetRuntimeFlags()
@@ -63,9 +75,12 @@ public class SkillState : IPlayerState
         bufferedSkillInput = false;
         energyCommitted = false;
         bufferedSkillTimer = 0f;
+        bufferedDodgeInput = false;
+        bufferedDodgeTimer = 0f;
         skillHitboxActive = false;
         previousMovementTime = 0f;
         skillSwingPlayed = false;
+        skillEndSoundPlayed = false;
 
         ClearAttackAssist();
     }
@@ -89,6 +104,7 @@ public class SkillState : IPlayerState
     public void Exit()
     {
         SetHitBoxActive(false);
+        player.SetInvincible(false);
         ResetRuntimeFlags();
     }
 
@@ -101,15 +117,19 @@ public class SkillState : IPlayerState
 
     public void HandleDodge()
     {
-        if (!CanCancelToDodge())
+        if (CanCancelToDodge())
+        {
+            player.ChangeState(player.DodgeState);
             return;
+        }
 
-        player.ChangeState(player.DodgeState);
+        // 강화 스킬의 보호 구간 끝에 가까운 회피 입력은 잠깐 보관해 입력 누락을 줄인다.
+        bufferedDodgeInput = true;
+        bufferedDodgeTimer = BufferDuration;
     }
 
     public void HandleHit()
     {
-        // player.ChangeState(player.HitState);
     }
 
     public void HandleSkill()
@@ -119,7 +139,6 @@ public class SkillState : IPlayerState
     }
     public void HandleUltimate()
     {
-        // player.ChangeState(player.UltimateState);
     }
     public void HandleParry()
     {
@@ -153,6 +172,11 @@ public class SkillState : IPlayerState
             t >= currentSkill.hitStart &&
             t < currentSkill.hitEnd;
         SetHitBoxActive(shouldHitBoxBeActive);
+        UpdateSkillEndSound(t, canExecuteSkill);
+
+        // 회피는 스킬 연계와 평타보다 우선하는 방어 행동이다.
+        if (TryCancelToDodge())
+            return;
 
         // 스킬 연계를 가장 먼저 처리한다.
         if (t >= currentSkill.chainInputOpenTime &&
@@ -187,12 +211,36 @@ public class SkillState : IPlayerState
             return;
 
         skillSwingPlayed = true;
-        CombatAudio.PlayAttackSwing(currentSkill.hitPayload.impactMultiplier);
+        bool isEnhancedSkill =
+            currentSkill == player.CharacterData.enhancedSkillBranch;
+        CombatAudio.PlaySkill(
+            player,
+            isEnhancedSkill,
+            currentSkill.hitPayload.impactMultiplier);
+    }
+
+    /// <summary>
+    /// 마지막 판정이 끝난 직후 캐릭터 전용 스킬 끝음을 한 번만 재생한다.
+    /// 스킬이 판정 전에 취소되거나 에너지 확정에 실패하면 재생하지 않는다.
+    /// </summary>
+    private void UpdateSkillEndSound(float normalizedTime, bool canExecuteSkill)
+    {
+        if (skillEndSoundPlayed || currentSkill == null || !canExecuteSkill)
+            return;
+
+        if (normalizedTime < currentSkill.hitEnd)
+            return;
+
+        skillEndSoundPlayed = true;
+        CombatAudio.PlaySkillEnd(player);
     }
 
     private void UpdateEndPhase(AnimatorStateInfo info)
     {
         // 본 스킬 연출은 끝났으므로 모든 후속 입력 시점을 통과한 것으로 취급한다.
+        if (TryCancelToDodge())
+            return;
+
         if (TryChainSkill())
             return;
 
@@ -246,12 +294,13 @@ public class SkillState : IPlayerState
         phase = SkillPhase.Attack;
         previousMovementTime = 0f;
         skillSwingPlayed = false;
+        skillEndSoundPlayed = false;
 
         // 일반 특수 스킬은 에너지 비용이 없으므로 시작 즉시 실행 확정.
         // 강화 특수 스킬은 energyCommitTime까지 선딜 상태로 둔다.
         energyCommitted = currentSkill.energyCost <= 0f;
 
-        hitBox.SetRewardType(DecibelRewardType.Skill);
+        hitBox.SetRewardType(CombatHitRewardType.Skill);
 
         CombatElement resolvedElement =
             currentSkill.hitPayload.elementOverride == CombatElement.None
@@ -266,7 +315,7 @@ public class SkillState : IPlayerState
             hitReactionBuildUp = currentSkill.hitPayload.hitReactionBuildUp,
             resolvedElement = resolvedElement,
             anomalyBuildUp = currentSkill.hitPayload.anomalyBuildUp,
-            canTriggerChainSkill = currentSkill.hitPayload.canTriggerChainSkill
+            canTriggerChainSkill = false
         };
 
         hitBox.SetHitData(hitData);
@@ -342,6 +391,17 @@ public class SkillState : IPlayerState
         return t >= dodgeUnlockTime;
     }
 
+    private bool TryCancelToDodge()
+    {
+        if (!bufferedDodgeInput || !CanCancelToDodge())
+            return false;
+
+        bufferedDodgeInput = false;
+        bufferedDodgeTimer = 0f;
+        player.ChangeState(player.DodgeState);
+        return true;
+    }
+
     private bool HasAnimatorState(string stateName)
     {
         if (player.Animator == null || string.IsNullOrWhiteSpace(stateName))
@@ -393,6 +453,17 @@ public class SkillState : IPlayerState
             {
                 bufferedSkillInput = false;
                 bufferedSkillTimer = 0f;
+            }
+        }
+
+        if (bufferedDodgeInput)
+        {
+            bufferedDodgeTimer -= player.ActionDeltaTime;
+
+            if (bufferedDodgeTimer <= 0f)
+            {
+                bufferedDodgeInput = false;
+                bufferedDodgeTimer = 0f;
             }
         }
     }
@@ -454,6 +525,13 @@ public class SkillState : IPlayerState
         if (hitBox == null)
             return;
 
+        // 스킬 데이터는 타격 구간이 하나이므로 이 구간이 해당 스킬의 마지막 타격이다.
+        bool isFinishingHeavyHit =
+            active &&
+            currentSkill != null &&
+            currentSkill.hitPayload.canTriggerChainSkill;
+        hitBox.SetChainSkillTriggerEnabled(isFinishingHeavyHit);
+
         if (skillHitboxActive == active)
             return;
 
@@ -474,6 +552,10 @@ public class SkillState : IPlayerState
 
         if (assistTarget == null)
             return;
+
+        assistStopDistance = player.ResolveAttackStopDistance(
+            assistTarget,
+            currentSkill.autoAimStopDistance);
 
         attackAssistDirection = player.GetAttackAssistDirection(assistTarget);
 
@@ -575,7 +657,7 @@ public class SkillState : IPlayerState
         toTarget.y = 0f;
 
         float distanceAlongMove = Vector3.Dot(toTarget, moveDirection);
-        float remainingDistance = distanceAlongMove - currentSkill.autoAimStopDistance;
+        float remainingDistance = distanceAlongMove - assistStopDistance;
 
         return Mathf.Clamp(requestedDistance, 0f, Mathf.Max(0f, remainingDistance));
     }
@@ -585,6 +667,7 @@ public class SkillState : IPlayerState
         assistTarget = null;
         attackAssistDirection = Vector3.zero;
         hasAttackAssist = false;
+        assistStopDistance = 0f;
     }
 
     private bool CanEnterSkill(SkillData skill)

@@ -1,5 +1,8 @@
 using UnityEngine;
 
+/// <summary>
+/// 카메라 기준 이동·회전·중력을 처리하고 입력 유지 시간에 따라 걷기와 달리기를 전환한다.
+/// </summary>
 public class LocomotionState : IPlayerState
 {
     private enum LocomotionMode
@@ -28,20 +31,35 @@ public class LocomotionState : IPlayerState
     {
         characterData = player.CharacterData;
 
-        currentMode = LocomotionMode.Idle;
-        moveHoldTimer = 0f;
-        lastMoveDirection = player.transform.forward;
+        Vector3 inputMoveDirection = player.GetCameraRelativeMoveDirection();
+        bool resumeHeldMovement =
+            player.MoveInput.sqrMagnitude > 0.0001f &&
+            inputMoveDirection.sqrMagnitude > 0.0001f;
+
+        if (resumeHeldMovement)
+        {
+            // 행동 중에도 이동을 유지했다면 걷기 대기 시간을 다시 요구하지 않고 달리기를 복구한다.
+            currentMode = LocomotionMode.Run;
+            moveHoldTimer = characterData.runEnterDelay;
+            lastMoveDirection = inputMoveDirection;
+            player.RotateToward(lastMoveDirection);
+            player.SetCurrentSpeed(Mathf.Max(player.CurrentSpeed, characterData.walkSpeed));
+        }
+        else
+        {
+            currentMode = LocomotionMode.Idle;
+            moveHoldTimer = 0f;
+            lastMoveDirection = player.transform.forward;
+            player.SetCurrentSpeed(0f);
+        }
 
         player.Animator.CrossFade(LOCOMOTION_STATE, 0.08f);
-        player.Animator.SetFloat(LOCOMOTION_PHASE_PARAM, 0f);
-        player.SetCurrentSpeed(0f);
+        player.Animator.SetFloat(LOCOMOTION_PHASE_PARAM, (float)currentMode);
     }
 
     public void Update()
     {
 
-        // 임시로 이동 상태에서만 에너지가 자동 회복된다.
-        player.RecoveryEnergyOverTime(player.EnergyRecoveryRate);
 
         Vector3 inputMoveDir = player.GetCameraRelativeMoveDirection();
         bool hasInput = player.MoveInput.sqrMagnitude > 0.0001f;
@@ -82,12 +100,19 @@ public class LocomotionState : IPlayerState
             _ => 0f
         };
 
-        player.SetCurrentSpeed(targetSpeed);
+        float speedChangeRate = targetSpeed > player.CurrentSpeed
+            ? player.Acceleration
+            : player.Deceleration;
+        float resolvedSpeed = Mathf.MoveTowards(
+            player.CurrentSpeed,
+            targetSpeed,
+            speedChangeRate * player.ActionDeltaTime);
+        player.SetCurrentSpeed(resolvedSpeed);
 
         Vector3 move = currentMode == LocomotionMode.Idle
             ? Vector3.zero
             // 입력이 잠깐 흔들려도 마지막 유효 방향을 유지해 이동 방향이 튀지 않게 한다.
-            : lastMoveDirection * targetSpeed;
+            : lastMoveDirection * player.CurrentSpeed;
 
         player.HandleGravity();
         move.y = player.YVelocity;

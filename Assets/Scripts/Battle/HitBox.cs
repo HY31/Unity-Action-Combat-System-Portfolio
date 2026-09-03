@@ -1,12 +1,16 @@
 using UnityEngine;
 
-public enum DecibelRewardType
+public enum CombatHitRewardType
 {
     None,
     NormalAttack,
     Skill
 }
 
+/// <summary>
+/// 상태가 구성한 런타임 히트 정보를 Trigger 충돌에 적용하고, 적중 연출과 전투 보상을 전달한다.
+/// 공격 종류별 계산은 하지 않고 전달받은 CombatHitData만 소비한다.
+/// </summary>
 [RequireComponent(typeof(BoxCollider))]
 public class HitBox : MonoBehaviour
 {
@@ -21,7 +25,7 @@ public class HitBox : MonoBehaviour
     [SerializeField] private Transform ownerRoot;
     private ThirdPersonCameraController camController;
 
-    private DecibelRewardType rewardType = DecibelRewardType.None;
+    private CombatHitRewardType rewardType = CombatHitRewardType.None;
     private HitFeedbackData feedback = HitFeedbackData.Default;
 
     private void Awake()
@@ -38,6 +42,12 @@ public class HitBox : MonoBehaviour
         this.hitData = hitData;
     }
 
+    public void SetChainSkillTriggerEnabled(bool enabled)
+    {
+        // 같은 공격의 다단 타격 사이에서도 마지막 타격 구간만 강공격으로 바꿀 수 있게 한다.
+        hitData.canTriggerChainSkill = enabled;
+    }
+
     public void SetActive(bool value)
     {
         active = value;
@@ -46,7 +56,15 @@ public class HitBox : MonoBehaviour
             hitCollider.enabled = value;
     }
 
-    public void SetRewardType(DecibelRewardType type)
+    public void SetManualActive(bool value)
+    {
+        active = value;
+
+        if (hitCollider != null)
+            hitCollider.enabled = false;
+    }
+
+    public void SetRewardType(CombatHitRewardType type)
     {
         rewardType = type;
     }
@@ -72,7 +90,30 @@ public class HitBox : MonoBehaviour
 
     private void OnTriggerEnter(Collider other)
     {
-        if (!active) return;
+        TryHit(other, ResolveImpactPoint(other));
+    }
+
+    private Vector3 ResolveImpactPoint(Collider other)
+    {
+        if (other == null)
+            return transform.position;
+
+        bool supportsClosestPoint =
+            other is BoxCollider ||
+            other is SphereCollider ||
+            other is CapsuleCollider ||
+            other is MeshCollider meshCollider && meshCollider.convex;
+
+        // 비볼록 메시와 지형 콜라이더는 Collider.ClosestPoint를 지원하지 않으므로 Bounds 근사값을 사용한다.
+        return supportsClosestPoint
+            ? other.ClosestPoint(transform.position)
+            : other.bounds.ClosestPoint(transform.position);
+    }
+
+    public bool TryHit(Collider other, Vector3 impactPoint)
+    {
+        if (!active || other == null)
+            return false;
 
         HurtBox hurtBox = other.GetComponent<HurtBox>();
 
@@ -80,10 +121,10 @@ public class HitBox : MonoBehaviour
             hurtBox = other.GetComponentInParent<HurtBox>();
 
         if (hurtBox == null)
-            return;
+            return false;
 
         if (ownerRoot != null && hurtBox.OwnerRoot == ownerRoot)
-            return;
+            return false;
 
         Vector3 sourcePosition = ownerRoot != null
             ? ownerRoot.position
@@ -99,8 +140,6 @@ public class HitBox : MonoBehaviour
                 ? hurtBox.OwnerRoot.position
                 : other.bounds.center;
             Vector3 hitDirection = targetPosition - sourcePosition;
-            Vector3 impactPoint = other.ClosestPoint(transform.position);
-
             // 피격이 확정된 순간의 접촉 위치와 공격 속성만 연출 계층으로 전달한다.
             CombatHitVfx.Play(
                 impactPoint,
@@ -118,19 +157,23 @@ public class HitBox : MonoBehaviour
                 feedback.cameraShakeVibrato);
             HitStop.DoHitStop(feedback.hitStopDuration);
 
-            // 공격의 실제 적중이 확정된 뒤에만 공격 종류에 맞는 데시벨을 지급한다.
+            // 공격의 실제 적중이 확정된 뒤에만 공격 종류에 맞는 전투 자원을 지급한다.
             PlayerController ownerPlayer = ownerRoot != null ? ownerRoot.GetComponent<PlayerController>() : null;
 
             switch (rewardType)
             {
-                case DecibelRewardType.NormalAttack:
-                    ownerPlayer?.GrantDecibelForNormalHit();
+                case CombatHitRewardType.NormalAttack:
+                    ownerPlayer?.GrantResourcesForNormalHit();
                     break;
 
-                case DecibelRewardType.Skill:
-                    ownerPlayer?.GrantDecibelForSkillHit();
+                case CombatHitRewardType.Skill:
+                    ownerPlayer?.GrantResourcesForSkillHit();
                     break;
             }
+
+            return true;
         }
+
+        return false;
     }
 }

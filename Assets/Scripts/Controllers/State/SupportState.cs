@@ -1,5 +1,8 @@
 using UnityEngine;
 
+/// <summary>
+/// 캐릭터 교체 직후 패링 지원·회피 지원의 진입 이동, 무적과 후속 공격을 처리한다.
+/// </summary>
 public class SupportState : IPlayerState
 {
     private enum ParryPhase

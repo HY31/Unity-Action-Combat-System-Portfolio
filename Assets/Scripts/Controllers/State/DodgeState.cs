@@ -6,19 +6,31 @@ public enum DodgeType
     Perfect
 }
 
+/// <summary>
+/// 일반·극한 회피의 이동과 무적을 처리하고, 극한 회피 성공 시 불릿 타임과 회피 반격을 연결한다.
+/// </summary>
 public class DodgeState : IPlayerState
 {
     private readonly PlayerController player;
     private CharacterData characterData;
     private const float NormalDodgeDuration = 0.3f;
-    private const float PerfectDodgeDuration = 0.45f;
-    private const float PerfectDodgeBulletTimeDuration = 0.62f;
+    private const float PerfectDodgeDuration = 0.58f;
+    private const float PerfectDodgeBulletTimeDuration = 0.78f;
+    private const float NormalDodgeInvincibilityDuration = 0.45f;
+    private const float PerfectDodgeInvincibilityDuration = 0.9f;
+    private const float PerfectDodgeFollowUpOpenTime = 0.24f;
+    private const float PerfectDodgeSlowPhaseDuration = 0.1f;
+    private const float PerfectDodgeAccelerationEndTime = 0.3f;
+    private const float PerfectDodgeSettleEndTime = 0.44f;
+    private const float PerfectDodgeInitialAnimationSpeed = 0.18f;
+    private const float PerfectDodgePeakAnimationSpeed = 1.45f;
 
     private float timer;
     private Vector3 dodgeDirection;
     private DodgeType dodgeType = DodgeType.Normal;
 
     private float elapsedTime;
+    private float baseAnimatorSpeed = 1f;
 
     private bool bufferedAttackInput;
     private float bufferedAttackTimer;
@@ -26,7 +38,7 @@ public class DodgeState : IPlayerState
     private bool bufferedSkillInput;
     private float bufferedSkillTimer;
 
-    private const float InputBufferDuration = 0.2f;
+    private const float InputBufferDuration = 0.35f;
 
     public DodgeState(PlayerController player)
     {
@@ -43,11 +55,16 @@ public class DodgeState : IPlayerState
         characterData = player.CharacterData;
 
         elapsedTime = 0f;
+        baseAnimatorSpeed = player.Animator != null ? player.Animator.speed : 1f;
         ResetFollowUpInputs();
 
-        // 회피 타입별 유효 시간 동안만 PlayerController의 공통 피격 진입점을 차단한다.
+        // 회피 상태가 끝나 후속 공격으로 넘어가도 별도의 실시간 무적 시간이 남아 다단 공격을 받아낸다.
         timer = dodgeType == DodgeType.Perfect ? PerfectDodgeDuration : NormalDodgeDuration;
         player.SetInvincible(true);
+        player.GrantTimedInvincibility(
+            dodgeType == DodgeType.Perfect
+                ? PerfectDodgeInvincibilityDuration
+                : NormalDodgeInvincibilityDuration);
 
         Vector3 inputDir = player.GetCameraRelativeMoveDirection();
         dodgeDirection = inputDir.sqrMagnitude > 0.0001f ? inputDir : player.transform.forward;
@@ -57,8 +74,10 @@ public class DodgeState : IPlayerState
 
         if (dodgeType == DodgeType.Perfect)
         {
-            // 플레이어의 상태 시간과 애니메이션만 실시간으로 두어 주변과 속도 차이를 만든다.
+            // 주변은 강하게 느려지고 회피 애니메이션은 순간 감속 뒤 급가속해 성공 순간을 강조한다.
             player.BeginUnscaledActionTime(PerfectDodgeBulletTimeDuration);
+            SetAnimatorSpeed(PerfectDodgeInitialAnimationSpeed);
+            CombatAudio.PlayPerfectDodge();
             CombatPresentationEffects.PlayPerfectDodge(player);
             CombatOperationEvents.Report(CombatOperationType.PerfectDodge, player);
         }
@@ -71,6 +90,7 @@ public class DodgeState : IPlayerState
         timer -= deltaTime;
         elapsedTime += deltaTime;
 
+        UpdatePerfectDodgeAnimationSpeed();
         UpdateInputBuffers();
 
         player.HandleGravity();
@@ -93,6 +113,7 @@ public class DodgeState : IPlayerState
 
     public void Exit()
     {
+        SetAnimatorSpeed(1f);
         player.SetInvincible(false);
         dodgeType = DodgeType.Normal;
         elapsedTime = 0f;
@@ -122,7 +143,6 @@ public class DodgeState : IPlayerState
 
     public void HandleUltimate()
     {
-        // player.ChangeState(player.UltimateState);
     }
     public void HandleParry()
     {
@@ -135,7 +155,11 @@ public class DodgeState : IPlayerState
         if (!bufferedAttackInput)
             return false;
 
-        if (elapsedTime < characterData.dodgeAttackCancelTime)
+        float cancelOpenTime = dodgeType == DodgeType.Perfect
+            ? Mathf.Max(characterData.dodgeAttackCancelTime, PerfectDodgeFollowUpOpenTime)
+            : characterData.dodgeAttackCancelTime;
+
+        if (elapsedTime < cancelOpenTime)
             return false;
 
         bufferedAttackInput = false;
@@ -150,7 +174,11 @@ public class DodgeState : IPlayerState
         if (!bufferedSkillInput)
             return false;
 
-        if (elapsedTime < characterData.dodgeSkillCancelTime)
+        float cancelOpenTime = dodgeType == DodgeType.Perfect
+            ? Mathf.Max(characterData.dodgeSkillCancelTime, PerfectDodgeFollowUpOpenTime)
+            : characterData.dodgeSkillCancelTime;
+
+        if (elapsedTime < cancelOpenTime)
             return false;
 
         bufferedSkillInput = false;
@@ -192,6 +220,53 @@ public class DodgeState : IPlayerState
 
         bufferedSkillInput = false;
         bufferedSkillTimer = 0f;
+    }
+
+    private void UpdatePerfectDodgeAnimationSpeed()
+    {
+        if (dodgeType != DodgeType.Perfect)
+            return;
+
+        float speedMultiplier;
+
+        if (elapsedTime <= PerfectDodgeSlowPhaseDuration)
+        {
+            speedMultiplier = PerfectDodgeInitialAnimationSpeed;
+        }
+        else if (elapsedTime <= PerfectDodgeAccelerationEndTime)
+        {
+            float t = Mathf.InverseLerp(
+                PerfectDodgeSlowPhaseDuration,
+                PerfectDodgeAccelerationEndTime,
+                elapsedTime);
+            speedMultiplier = Mathf.SmoothStep(
+                PerfectDodgeInitialAnimationSpeed,
+                PerfectDodgePeakAnimationSpeed,
+                t);
+        }
+        else if (elapsedTime <= PerfectDodgeSettleEndTime)
+        {
+            float t = Mathf.InverseLerp(
+                PerfectDodgeAccelerationEndTime,
+                PerfectDodgeSettleEndTime,
+                elapsedTime);
+            speedMultiplier = Mathf.SmoothStep(
+                PerfectDodgePeakAnimationSpeed,
+                1f,
+                t);
+        }
+        else
+        {
+            speedMultiplier = 1f;
+        }
+
+        SetAnimatorSpeed(speedMultiplier);
+    }
+
+    private void SetAnimatorSpeed(float multiplier)
+    {
+        if (player.Animator != null)
+            player.Animator.speed = baseAnimatorSpeed * Mathf.Max(0f, multiplier);
     }
 }
 
