@@ -17,12 +17,9 @@ public sealed class CombatPresentationEffects : MonoBehaviour
     private Image perfectDodgeToneImage;
     private CanvasGroup chainPromptToneGroup;
     private Image chainPromptToneImage;
-    private CanvasGroup letterboxGroup;
-
     private Tween flashTween;
     private Tween perfectDodgeToneTween;
     private Tween chainPromptToneTween;
-    private Tween letterboxTween;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
     private static void ResetStaticState()
@@ -88,14 +85,12 @@ public sealed class CombatPresentationEffects : MonoBehaviour
     public static void BeginUltimate(CombatElement element)
     {
         HitStop.DoSlowMotion(0.18f, 0.06f, 0.28f);
-        ShowLetterbox(true, 0.14f);
         Flash(ResolveElementColor(element), 0.08f, 0.24f);
         ThirdPersonCameraController.Active?.PunchFieldOfView(-8f, 0.42f);
     }
 
     public static void EndUltimate()
     {
-        ShowLetterbox(false, 0.18f);
         ThirdPersonCameraController.Active?.PunchFieldOfView(3f, 0.25f);
     }
 
@@ -103,7 +98,6 @@ public sealed class CombatPresentationEffects : MonoBehaviour
     {
         // 선택 UI가 열린 동안 월드는 거의 정지시키되 unscaled time을 쓰는 UI 입력과 타이머는 유지한다.
         HitStop.BeginSustainedSlowMotion(0.01f);
-        ShowLetterbox(true, 0.12f);
         Resolve()?.SetChainPromptToneVisible(true);
         Flash(new Color(0.93f, 0.98f, 1f), 0.14f, 0.26f);
         ThirdPersonCameraController.Active?.BeginChainPromptZoom();
@@ -112,7 +106,6 @@ public sealed class CombatPresentationEffects : MonoBehaviour
     public static void EndChainPrompt()
     {
         HitStop.EndSustainedSlowMotion();
-        ShowLetterbox(false, 0.14f);
         Resolve()?.SetChainPromptToneVisible(false);
         ThirdPersonCameraController.Active?.EndChainPromptZoom();
     }
@@ -124,15 +117,6 @@ public sealed class CombatPresentationEffects : MonoBehaviour
             return;
 
         effects.PlayFlash(color, peakAlpha, duration);
-    }
-
-    public static void ShowLetterbox(bool visible, float duration)
-    {
-        CombatPresentationEffects effects = Resolve();
-        if (effects == null)
-            return;
-
-        effects.SetLetterboxVisible(visible, duration);
     }
 
     private static CombatPresentationEffects Resolve()
@@ -167,7 +151,6 @@ public sealed class CombatPresentationEffects : MonoBehaviour
         flashTween?.Kill();
         perfectDodgeToneTween?.Kill();
         chainPromptToneTween?.Kill();
-        letterboxTween?.Kill();
 
         if (instance == this)
             instance = null;
@@ -209,23 +192,6 @@ public sealed class CombatPresentationEffects : MonoBehaviour
         flashGroup = flashImage.gameObject.AddComponent<CanvasGroup>();
         flashGroup.alpha = 0f;
 
-        GameObject letterboxRoot = new GameObject(
-            "Cinematic Letterbox",
-            typeof(RectTransform),
-            typeof(CanvasGroup));
-        letterboxRoot.transform.SetParent(transform, false);
-        RectTransform letterboxRect = (RectTransform)letterboxRoot.transform;
-        StretchFullScreen(letterboxRect);
-        letterboxGroup = letterboxRoot.GetComponent<CanvasGroup>();
-        letterboxGroup.alpha = 0f;
-        letterboxGroup.interactable = false;
-        letterboxGroup.blocksRaycasts = false;
-
-        Image topBar = CreateImage("Top Bar", letterboxRoot.transform, Color.black);
-        ConfigureBar(topBar.rectTransform, true);
-
-        Image bottomBar = CreateImage("Bottom Bar", letterboxRoot.transform, Color.black);
-        ConfigureBar(bottomBar.rectTransform, false);
     }
 
     private void PlayFlash(Color color, float peakAlpha, float duration)
@@ -283,19 +249,6 @@ public sealed class CombatPresentationEffects : MonoBehaviour
             .SetUpdate(true);
     }
 
-    private void SetLetterboxVisible(bool visible, float duration)
-    {
-        if (letterboxGroup == null)
-            return;
-
-        letterboxTween?.Kill(false);
-        duration = Mathf.Max(0.01f, duration);
-        letterboxTween = letterboxGroup
-            .DOFade(visible ? 1f : 0f, duration)
-            .SetEase(visible ? Ease.OutCubic : Ease.InCubic)
-            .SetUpdate(true);
-    }
-
     private static Image CreateImage(string objectName, Transform parent, Color color)
     {
         GameObject child = new GameObject(
@@ -317,15 +270,6 @@ public sealed class CombatPresentationEffects : MonoBehaviour
         rect.anchorMax = Vector2.one;
         rect.offsetMin = Vector2.zero;
         rect.offsetMax = Vector2.zero;
-    }
-
-    private static void ConfigureBar(RectTransform rect, bool top)
-    {
-        rect.anchorMin = new Vector2(0f, top ? 1f : 0f);
-        rect.anchorMax = new Vector2(1f, top ? 1f : 0f);
-        rect.pivot = new Vector2(0.5f, top ? 1f : 0f);
-        rect.sizeDelta = new Vector2(0f, 86f);
-        rect.anchoredPosition = Vector2.zero;
     }
 
     private static Color ResolveElementColor(CombatElement element)
