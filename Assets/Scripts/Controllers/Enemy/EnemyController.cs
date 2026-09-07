@@ -9,6 +9,9 @@ using DG.Tweening;
 public class EnemyController : MonoBehaviour
 {
     public const int MaxChainSkillsPerGroggy = 3;
+    public const int MaxDisplayedStunPercent = 99;
+    public const float GroggyTriggerNormalized =
+        MaxDisplayedStunPercent / 100f;
     private const float AttackEndBlendDuration = 0.12f;
 
     private enum EnemyAttackPhase
@@ -1210,7 +1213,7 @@ public class EnemyController : MonoBehaviour
                 0f,
                 enemyData.maxStun);
 
-            if (currentStun >= enemyData.maxStun)
+            if (currentStun >= enemyData.maxStun * GroggyTriggerNormalized)
             {
                 EnterGroggy();
                 return true;
@@ -1306,7 +1309,9 @@ public class EnemyController : MonoBehaviour
             : hitData.hitReactionBuildUp;
         AddHitReactionBuildUp(hitReactionBuildUp);
 
-        if (!isGroggy && enemyData.maxStun > 0f && currentStun >= enemyData.maxStun)
+        if (!isGroggy &&
+            enemyData.maxStun > 0f &&
+            currentStun >= enemyData.maxStun * GroggyTriggerNormalized)
             EnterGroggy();
 
         if (isGroggy && isHeavyAttack)
@@ -1544,11 +1549,28 @@ public class EnemyController : MonoBehaviour
         chainSkillPromptPending = false;
         chainSkillsStartedThisGroggy++;
 
-        // 세 번째 콤보 스킬은 첫 타격 전 선택 시점에 이미 이번 연계 횟수를 모두 사용한 것으로 본다.
+        // 마지막 콤보 스킬을 시작해 남은 가능 횟수가 0이 되는 순간
+        // 모든 HUD가 소진 상태(회색)로 즉시 전환된다.
         if (chainSkillsStartedThisGroggy >= MaxChainSkillsPerGroggy)
             chainSkillSequenceComplete = true;
 
         return true;
+    }
+
+    public void NotifyChainSkillFinished()
+    {
+        if (!isGroggy)
+            return;
+
+
+        if (chainSkillSequenceComplete ||
+            chainSkillsStartedThisGroggy < MaxChainSkillsPerGroggy)
+        {
+            return;
+        }
+
+        chainSkillPromptPending = false;
+        chainSkillSequenceComplete = true;
     }
 
     public void CancelChainSkillSequence()
@@ -1574,7 +1596,8 @@ public class EnemyController : MonoBehaviour
             }
         }
 
-        // 콤보 스킬 선택 UI가 열린 동안에는 선택 시간과 별개로 그로기 시간을 소비하지 않는다.
+        // 콤보 스킬을 고르는 동안만 그로기 시간을 정지한다.
+        // 선택이 끝나 실제 콤보 스킬이 실행되는 동안에는 다시 시간이 흐른다.
         if (chainSkillPromptPending)
             return;
 

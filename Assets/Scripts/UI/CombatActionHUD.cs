@@ -15,8 +15,15 @@ public sealed class CombatActionHUD : MonoBehaviour
         public CanvasGroup root;
         public Image background;
         public Image frame;
-        public Text symbol;
+        public Image icon;
         public Text keyLabel;
+        public Sprite normalSprite;
+        public Sprite readySprite;
+        public Image readySheen;
+        public bool dimUntilReady;
+
+        [NonSerialized] public bool wasReady;
+        [NonSerialized] public float sheenProgress = -1f;
     }
 
     [Header("Data")]
@@ -36,7 +43,15 @@ public sealed class CombatActionHUD : MonoBehaviour
     [SerializeField] private Color supportReadyColor = new Color32(255, 207, 19, 255);
     [SerializeField] private Color ultimateReadyColor = new Color32(255, 145, 18, 255);
     [SerializeField] private Color buttonBackgroundColor = new Color32(12, 15, 16, 238);
-    [SerializeField, Min(0f)] private float rainbowSpeed = 0.45f;
+
+    [Header("준비 연출")]
+    [SerializeField, Min(0.05f)] private float sheenDuration = 0.85f;
+    [SerializeField] private Vector2 sheenStart = new Vector2(-104f, 104f);
+    [SerializeField] private Vector2 sheenEnd = new Vector2(104f, -104f);
+    [SerializeField, Range(0f, 1f)] private float sheenPeakAlpha = 0.78f;
+    [SerializeField, Range(1f, 1.25f)] private float readyPulseScale = 1.08f;
+
+    private PlayerController lastActiveCharacter;
 
     public void Configure(
         ButtonView attack,
@@ -63,7 +78,7 @@ public sealed class CombatActionHUD : MonoBehaviour
 
     private void LateUpdate()
     {
-        // 히트 스톱과 타임 스케일 변화 중에도 준비 색상 애니메이션은 계속 보인다.
+        // 히트 스톱과 타임 스케일 변화 중에도 준비 상태와 광택 애니메이션은 계속 보인다.
         RefreshNow();
     }
 
@@ -74,14 +89,24 @@ public sealed class CombatActionHUD : MonoBehaviour
             : null;
         bool hasActiveCharacter = active != null && !active.IsDefeated;
 
-        ApplyButton(attackButton, hasActiveCharacter ? normalColor : unavailableColor);
-        ApplyButton(dodgeButton, hasActiveCharacter ? normalColor : unavailableColor);
+        bool activeCharacterChanged = lastActiveCharacter != active;
+        if (activeCharacterChanged)
+        {
+            StopReadySheen(skillButton);
+            StopReadySheen(ultimateButton);
+            lastActiveCharacter = active;
+        }
+
+        ApplyButton(attackButton, hasActiveCharacter, false, normalColor);
+        ApplyButton(dodgeButton, hasActiveCharacter, false, normalColor);
 
         bool enhancedSkillReady = hasActiveCharacter && active.IsEnhancedBranchReady;
-        Color skillColor = enhancedSkillReady
-            ? EvaluateRainbowColor()
-            : unavailableColor;
-        ApplyButton(skillButton, skillColor);
+        ApplyButton(
+            skillButton,
+            hasActiveCharacter,
+            enhancedSkillReady,
+            normalColor,
+            activeCharacterChanged);
 
         SupportPointManager supportManager = partyManager != null
             ? partyManager.SupportPointManager
@@ -95,23 +120,19 @@ public sealed class CombatActionHUD : MonoBehaviour
             ? supportManager.MaxSupportPoint
             : 0;
         bool supportReady = hasActiveCharacter && currentSupport > 0;
-        ApplyButton(
-            supportButton,
-            supportReady ? supportReadyColor : unavailableColor);
+        ApplyButton(supportButton, supportReady, false, supportReadyColor);
         ApplySupportPips(currentSupport, maximumSupport);
 
         bool ultimateReady = hasActiveCharacter && active.CanUseUltimate;
         ApplyButton(
             ultimateButton,
-            ultimateReady ? ultimateReadyColor : unavailableColor);
-    }
+            hasActiveCharacter,
+            ultimateReady,
+            ultimateReadyColor,
+            activeCharacterChanged);
 
-    private Color EvaluateRainbowColor()
-    {
-        float hue = Mathf.Repeat(Time.unscaledTime * rainbowSpeed, 1f);
-        Color color = Color.HSVToRGB(hue, 0.72f, 1f);
-        color.a = 1f;
-        return color;
+        UpdateReadySheen(skillButton);
+        UpdateReadySheen(ultimateButton);
     }
 
     private void ApplySupportPips(int current, int maximum)
@@ -132,7 +153,12 @@ public sealed class CombatActionHUD : MonoBehaviour
         }
     }
 
-    private void ApplyButton(ButtonView view, Color stateColor)
+    private void ApplyButton(
+        ButtonView view,
+        bool available,
+        bool ready,
+        Color availableKeyColor,
+        bool synchronizeReadyState = false)
     {
         if (view == null)
             return;
@@ -146,11 +172,99 @@ public sealed class CombatActionHUD : MonoBehaviour
 
         if (view.background != null)
             view.background.color = buttonBackgroundColor;
+
+        Color visualColor = !available || (view.dimUntilReady && !ready)
+            ? unavailableColor
+            : Color.white;
         if (view.frame != null)
-            view.frame.color = stateColor;
-        if (view.symbol != null)
-            view.symbol.color = stateColor;
+            view.frame.color = visualColor;
+
+        if (view.icon != null)
+        {
+            Sprite stateSprite = ready && view.readySprite != null
+                ? view.readySprite
+                : view.normalSprite;
+            if (stateSprite != null)
+                view.icon.sprite = stateSprite;
+            view.icon.color = visualColor;
+        }
+
         if (view.keyLabel != null)
-            view.keyLabel.color = stateColor;
+            view.keyLabel.color = available ? availableKeyColor : unavailableColor;
+
+        if (view.readySheen == null)
+            return;
+
+        // 캐릭터 교대 직후에는 이미 준비된 상태를 새 충전으로 오인하지 않는다.
+        if (synchronizeReadyState)
+        {
+            StopReadySheen(view);
+            view.wasReady = ready;
+            return;
+        }
+
+        if (ready && !view.wasReady)
+            BeginReadySheen(view);
+        else if (!ready)
+            StopReadySheen(view);
+
+        view.wasReady = ready;
     }
+
+    private void BeginReadySheen(ButtonView view)
+    {
+        view.sheenProgress = 0f;
+        view.readySheen.gameObject.SetActive(true);
+        view.readySheen.rectTransform.anchoredPosition = sheenStart;
+        SetSheenAlpha(view.readySheen, 0f);
+        SetButtonScale(view, 1f);
+    }
+
+    private void UpdateReadySheen(ButtonView view)
+    {
+        if (view == null || view.readySheen == null || view.sheenProgress < 0f)
+            return;
+
+        view.sheenProgress += Time.unscaledDeltaTime / Mathf.Max(0.05f, sheenDuration);
+        float progress = Mathf.Clamp01(view.sheenProgress);
+        float eased = Mathf.SmoothStep(0f, 1f, progress);
+        view.readySheen.rectTransform.anchoredPosition = Vector2.Lerp(
+            sheenStart,
+            sheenEnd,
+            eased);
+        SetSheenAlpha(
+            view.readySheen,
+            Mathf.Sin(progress * Mathf.PI) * sheenPeakAlpha);
+        SetButtonScale(
+            view,
+            1f + Mathf.Sin(progress * Mathf.PI) * (readyPulseScale - 1f));
+
+        if (progress >= 1f)
+            StopReadySheen(view);
+    }
+
+    private static void SetSheenAlpha(Image sheen, float alpha)
+    {
+        Color color = sheen.color;
+        color.a = alpha;
+        sheen.color = color;
+    }
+
+    private static void SetButtonScale(ButtonView view, float scale)
+    {
+        if (view.root != null)
+            view.root.transform.localScale = Vector3.one * scale;
+    }
+
+    private static void StopReadySheen(ButtonView view)
+    {
+        if (view == null)
+            return;
+
+        view.sheenProgress = -1f;
+        if (view.readySheen != null)
+            view.readySheen.gameObject.SetActive(false);
+        SetButtonScale(view, 1f);
+    }
+
 }

@@ -3,6 +3,7 @@ using System.IO;
 using System.Linq;
 using UnityEditor;
 using UnityEditor.Build.Reporting;
+using UnityEditor.SceneManagement;
 using UnityEngine;
 
 /// <summary>
@@ -13,10 +14,9 @@ using UnityEngine;
 internal static class PortfolioCaptureBuild
 {
     private const string RequestPath = "Library/PortfolioCaptureBuild.request";
+    private const string FinalRequestPath = "Library/PortfolioFinalBuild.request";
+    private const string FinalStatusPath = "Library/PortfolioFinalBuild.status.txt";
     private const string OutputDirectory = "Builds/PortfolioCapture";
-    private const string ExecutablePath =
-        OutputDirectory + "/RealTimeAction_Portfolio.exe";
-    private const string StatusPath = OutputDirectory + "/build-status.txt";
     private const string MenuPath = "Tools/Portfolio/Build Capture Player (1080p)";
 
     static PortfolioCaptureBuild()
@@ -34,7 +34,8 @@ internal static class PortfolioCaptureBuild
 
     private static void TryRunRequestedBuild()
     {
-        if (!File.Exists(RequestPath))
+        bool final = File.Exists(FinalRequestPath);
+        if (!final && !File.Exists(RequestPath))
             return;
 
         if (EditorApplication.isCompiling ||
@@ -44,21 +45,41 @@ internal static class PortfolioCaptureBuild
             return;
         }
 
-        File.Delete(RequestPath);
-        BuildCapturePlayer();
+        File.Delete(final ? FinalRequestPath : RequestPath);
+        if (final) BuildFinalPlayer();
+        else BuildCapturePlayer();
     }
 
     public static void BuildCapturePlayer()
     {
+        BuildPlayer(OutputDirectory, false);
+    }
+
+    [MenuItem("Tools/Portfolio/Build Final Player (1080p)")]
+    public static void BuildFinalPlayer()
+    {
+        BuildPlayer("Builds/Final_" + DateTime.Now.ToString("yyyyMMdd_HHmmss"), true);
+    }
+
+    private static void BuildPlayer(string outputDirectory, bool final)
+    {
+        string executablePath = outputDirectory + "/RealTimeAction_Portfolio.exe";
+        void WriteBuildStatus(string content)
+        {
+            Directory.CreateDirectory(outputDirectory);
+            File.WriteAllText(outputDirectory + "/build-status.txt", content);
+            if (final) File.WriteAllText(FinalStatusPath, content);
+        }
+
         string[] scenes = EditorBuildSettings.scenes
             .Where(scene => scene.enabled && !string.IsNullOrWhiteSpace(scene.path))
             .Select(scene => scene.path)
             .ToArray();
 
-        Directory.CreateDirectory(OutputDirectory);
+        Directory.CreateDirectory(outputDirectory);
         if (scenes.Length == 0)
         {
-            WriteStatus("FAILED\nNo enabled scenes were found in EditorBuildSettings.");
+            WriteBuildStatus("FAILED\nNo enabled scenes were found in EditorBuildSettings.");
             Debug.LogError("포트폴리오 촬영 빌드 실패: 활성화된 빌드 씬이 없습니다.");
             return;
         }
@@ -72,6 +93,24 @@ internal static class PortfolioCaptureBuild
 
         try
         {
+            WriteBuildStatus("BUILDING\nOutput: " + Path.GetFullPath(executablePath) +
+                "\nStartedAt: " + DateTime.Now.ToString("O"));
+            if (final)
+            {
+                // Save only loaded build scenes, not unrelated open scenes.
+                string backupDirectory = Path.GetFullPath("../.codex-temp/final-build-scene-backups/" +
+                    DateTime.Now.ToString("yyyyMMdd_HHmmss"));
+                for (int i = 0; i < UnityEngine.SceneManagement.SceneManager.sceneCount; i++)
+                {
+                    var scene = UnityEngine.SceneManagement.SceneManager.GetSceneAt(i);
+                    if (!scene.isLoaded || !scene.isDirty || !scenes.Contains(scene.path)) continue;
+                    Directory.CreateDirectory(backupDirectory);
+                    File.Copy(scene.path, Path.Combine(backupDirectory, Path.GetFileName(scene.path)));
+                    if (!EditorSceneManager.SaveScene(scene))
+                        throw new IOException("Could not save build scene: " + scene.path);
+                }
+                AssetDatabase.SaveAssets();
+            }
             PlayerSettings.defaultScreenWidth = 1920;
             PlayerSettings.defaultScreenHeight = 1080;
             PlayerSettings.defaultIsNativeResolution = false;
@@ -82,7 +121,7 @@ internal static class PortfolioCaptureBuild
             BuildPlayerOptions options = new BuildPlayerOptions
             {
                 scenes = scenes,
-                locationPathName = ExecutablePath,
+                locationPathName = executablePath,
                 target = BuildTarget.StandaloneWindows64,
                 options = BuildOptions.None
             };
@@ -94,22 +133,26 @@ internal static class PortfolioCaptureBuild
 
             string status =
                 $"Result: {summary.result}\n" +
-                $"Output: {Path.GetFullPath(ExecutablePath)}\n" +
+                $"Output: {Path.GetFullPath(executablePath)}\n" +
                 $"SizeMB: {summary.totalSize / 1048576d:F1}\n" +
                 $"DurationSeconds: {elapsedSeconds:F1}\n" +
                 $"Errors: {summary.totalErrors}\n" +
                 $"Warnings: {summary.totalWarnings}\n" +
                 $"CompletedAt: {DateTime.Now:yyyy-MM-dd HH:mm:ss}";
-            WriteStatus(status);
+            string messages = string.Join("\n", report.steps.SelectMany(step => step.messages)
+                .Where(message => message.type == LogType.Warning || message.type == LogType.Error ||
+                    message.type == LogType.Exception).Select(message => message.type + ": " + message.content));
+            File.WriteAllText(outputDirectory + "/build-messages.txt", messages);
+            WriteBuildStatus(status);
 
             if (summary.result == BuildResult.Succeeded)
-                Debug.Log($"포트폴리오 촬영 빌드 완료: {ExecutablePath}");
+                Debug.Log($"포트폴리오 빌드 완료: {executablePath}");
             else
                 Debug.LogError($"포트폴리오 촬영 빌드 실패: {summary.result}");
         }
         catch (Exception exception)
         {
-            WriteStatus($"FAILED\n{exception}");
+            WriteBuildStatus($"FAILED\n{exception}");
             Debug.LogException(exception);
         }
         finally
@@ -124,9 +167,4 @@ internal static class PortfolioCaptureBuild
         }
     }
 
-    private static void WriteStatus(string content)
-    {
-        Directory.CreateDirectory(OutputDirectory);
-        File.WriteAllText(StatusPath, content);
-    }
 }

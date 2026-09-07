@@ -9,6 +9,12 @@ internal static class CombatHudLayoutUpgrader
         "Assets/Prefabs/UI/ZZZHudV2/ZZZ_AssaultBattleHUD.prefab";
     private const string EnemyPrefabPath =
         "Assets/Prefabs/UI/ZZZHudV2/ZZZ_EnemyWorldHUD.prefab";
+    private const string ActionButtonSpriteRoot =
+        "Assets/Sprites/ZZZHudV2/ActionButtons";
+    private const string AssaultFairySpriteRoot =
+        "Assets/Sprites/ZZZHudV2/AssaultFairy";
+    private const string BossStatusSpriteRoot =
+        "Assets/Sprites/ZZZHudV2/BossStatus";
     private const string SessionKey = "ZZZHudV2.CombatLayoutUpgradeAttempted";
 
     static CombatHudLayoutUpgrader()
@@ -47,10 +53,22 @@ internal static class CombatHudLayoutUpgrader
         }
 
         GameObject assault = AssetDatabase.LoadAssetAtPath<GameObject>(AssaultPrefabPath);
+        Transform readySheenMask = assault != null
+            ? assault.transform.Find("CombatView/ActionHUD/Skill/ReadySheenMask")
+            : null;
         bool needsUpgrade =
             assault != null &&
             (assault.transform.Find("CombatView/BossStatusPanel") == null ||
-             assault.transform.Find("CombatView/ActionHUD") == null);
+             assault.transform.Find("CombatView/BossStatusPanel/SourceFrame/BossOuterMask") == null ||
+             assault.transform.Find("CombatView/BossStatusPanel/SourceFrame/Health/Fill") == null ||
+             assault.transform.Find("CombatView/BossStatusPanel/SourceFrame/Stun/Fill") == null ||
+             assault.transform.Find("CombatView/BossStatusPanel/SourceFrame/PortraitMask/BossPortrait") == null ||
+             assault.transform.Find("CombatView/ActionHUD") == null ||
+             assault.transform.Find("CombatView/ActionHUD/Attack/Icon") == null ||
+             assault.transform.Find("CombatView/TimerPanel/FairyTimerBackground") == null ||
+             assault.transform.Find("CombatView/ScorePanel/FairyIcon") == null ||
+             readySheenMask == null ||
+             readySheenMask.GetComponent<Mask>() == null);
 
         if (SessionState.GetBool(SessionKey, false) && !needsUpgrade)
             return;
@@ -68,10 +86,10 @@ internal static class CombatHudLayoutUpgrader
             if (combatView == null)
                 return;
 
-            RepositionCombatPanels(combatView);
-            BossView bossView = EnsureBossStatusView(combatView);
+            AssaultInfoView assaultInfo = RebuildFairyAssaultInfo(combatView);
+            BossView bossView = RebuildBossStatusView(combatView);
             EnsureActionHud(combatView);
-            ConfigureAssaultHud(root, bossView);
+            ConfigureAssaultHud(root, bossView, assaultInfo);
 
             PrefabUtility.SaveAsPrefabAsset(root, AssaultPrefabPath);
         }
@@ -81,207 +99,339 @@ internal static class CombatHudLayoutUpgrader
         }
     }
 
-    private static void RepositionCombatPanels(Transform combatView)
+    private static AssaultInfoView RebuildFairyAssaultInfo(Transform combatView)
     {
-        RectTransform timer = combatView.Find("TimerPanel") as RectTransform;
-        if (timer != null)
+        Transform oldTimer = combatView.Find("TimerPanel");
+        if (oldTimer != null)
+            UnityEngine.Object.DestroyImmediate(oldTimer.gameObject);
+
+        Transform oldScore = combatView.Find("ScorePanel");
+        if (oldScore != null)
+            UnityEngine.Object.DestroyImmediate(oldScore.gameObject);
+
+        Sprite panelSprite = LoadAssaultFairySprite("ProBg03");
+        Sprite timerSprite = LoadAssaultFairySprite("FairyTime_Pro");
+        Sprite timerLineSprite = LoadAssaultFairySprite("FairyTime_ProLine");
+        Sprite timerIconSprite = LoadAssaultFairySprite("IconTime");
+        Sprite circleSprite = LoadAssaultFairySprite("Circle64");
+        Sprite fairyBackgroundSprite = LoadAssaultFairySprite("FairyIconBG02");
+        Sprite fairySprite = LoadAssaultFairySprite("Fairy");
+        Sprite leftCapSprite = LoadAssaultFairySprite("ProBg02");
+        Sprite rightCapSprite = LoadAssaultFairySprite("ProBg04");
+
+        GameObject timerObject = CreateUiObject("TimerPanel", combatView);
+        RectTransform timerRect = timerObject.GetComponent<RectTransform>();
+        timerRect.anchorMin = Vector2.one;
+        timerRect.anchorMax = Vector2.one;
+        timerRect.pivot = Vector2.one;
+        timerRect.sizeDelta = new Vector2(360f, 58f);
+        timerRect.anchoredPosition = new Vector2(-42f, -126f);
+
+        Image timerBackground = CreateImage(
+            "FairyTimerBackground",
+            timerObject.transform,
+            panelSprite,
+            new Color32(19, 21, 23, 248));
+        SetRect(timerBackground.rectTransform, new Vector2(326f, 42f), new Vector2(-11f, 0f));
+        timerBackground.type = Image.Type.Sliced;
+
+        GameObject progressTrackObject = CreateUiObject("ProgressTrack", timerObject.transform);
+        SetRect(
+            progressTrackObject.GetComponent<RectTransform>(),
+            new Vector2(262f, 20f),
+            new Vector2(-31f, 10f));
+
+        Image progressBack = CreateImage(
+            "Background",
+            progressTrackObject.transform,
+            timerSprite,
+            new Color32(75, 47, 43, 255));
+        Stretch(progressBack.rectTransform);
+        progressBack.type = Image.Type.Sliced;
+
+        Image progressFill = CreateImage(
+            "ProgressFill",
+            progressTrackObject.transform,
+            timerSprite,
+            new Color32(235, 74, 39, 255));
+        Stretch(progressFill.rectTransform, new Vector4(3f, 3f, 3f, 3f));
+        progressFill.type = Image.Type.Filled;
+        progressFill.fillMethod = Image.FillMethod.Horizontal;
+        progressFill.fillOrigin = (int)Image.OriginHorizontal.Left;
+        progressFill.fillClockwise = true;
+        progressFill.fillAmount = 0f;
+
+        Image progressLine = CreateImage(
+            "Line",
+            progressTrackObject.transform,
+            timerLineSprite,
+            new Color32(37, 39, 41, 255));
+        Stretch(progressLine.rectTransform);
+        progressLine.type = Image.Type.Sliced;
+
+        Text timerText = CreateText(
+            "Timer",
+            timerObject.transform,
+            "03:00",
+            22,
+            TextAnchor.MiddleRight,
+            FontStyle.Bold,
+            new Color32(225, 231, 234, 255));
+        SetRect(timerText.rectTransform, new Vector2(142f, 28f), new Vector2(62f, -10f));
+
+        Image timerIcon = CreateImage(
+            "TimeIcon",
+            timerObject.transform,
+            timerIconSprite,
+            Color.white);
+        SetRect(timerIcon.rectTransform, new Vector2(52f, 52f), new Vector2(151f, 0f));
+        timerIcon.preserveAspect = true;
+
+        GameObject scoreObject = CreateUiObject("ScorePanel", combatView);
+        RectTransform scoreRect = scoreObject.GetComponent<RectTransform>();
+        scoreRect.anchorMin = Vector2.one;
+        scoreRect.anchorMax = Vector2.one;
+        scoreRect.pivot = Vector2.one;
+        scoreRect.sizeDelta = new Vector2(420f, 58f);
+        scoreRect.anchoredPosition = new Vector2(-42f, -188f);
+
+        Image scoreBackground = CreateImage(
+            "FairyScoreBackground",
+            scoreObject.transform,
+            panelSprite,
+            new Color32(16, 18, 20, 250));
+        SetRect(scoreBackground.rectTransform, new Vector2(382f, 42f), new Vector2(-12f, 0f));
+        scoreBackground.type = Image.Type.Sliced;
+
+        Image leftCap = CreateImage(
+            "LeftCap",
+            scoreObject.transform,
+            leftCapSprite,
+            new Color32(25, 28, 30, 255));
+        SetRect(leftCap.rectTransform, new Vector2(62f, 40f), new Vector2(-179f, 0f));
+        leftCap.preserveAspect = true;
+
+        Image rightCap = CreateImage(
+            "RightCap",
+            scoreObject.transform,
+            rightCapSprite,
+            new Color32(16, 18, 20, 255));
+        SetRect(rightCap.rectTransform, new Vector2(30f, 38f), new Vector2(165f, 0f));
+        rightCap.preserveAspect = true;
+
+        GameObject rankRoot = CreateUiObject("RankMedals", scoreObject.transform);
+        SetRect(
+            rankRoot.GetComponent<RectTransform>(),
+            new Vector2(78f, 28f),
+            new Vector2(-134f, 0f));
+
+        string[] rankNames = { "RankB", "RankA", "RankS" };
+        string[] rankLabels = { "B", "A", "S" };
+        Image[] rankIndicators = new Image[rankNames.Length];
+        for (int i = 0; i < rankNames.Length; i++)
         {
-            timer.anchorMin = Vector2.one;
-            timer.anchorMax = Vector2.one;
-            timer.pivot = Vector2.one;
-            timer.sizeDelta = new Vector2(270f, 48f);
-            timer.anchoredPosition = new Vector2(-42f, -134f);
+            float x = (i - 1) * 25f;
+            Image rank = CreateImage(
+                rankNames[i],
+                rankRoot.transform,
+                circleSprite,
+                new Color32(83, 86, 87, 255));
+            SetRect(rank.rectTransform, new Vector2(22f, 22f), new Vector2(x, 0f));
+            rank.preserveAspect = true;
 
-            Text operation = timer.Find("OperationLabel")?.GetComponent<Text>();
-            if (operation != null)
-            {
-                operation.fontSize = 11;
-                SetRect(operation.rectTransform, new Vector2(118f, 18f), new Vector2(-69f, 13f));
-            }
-
-            Text time = timer.Find("Timer")?.GetComponent<Text>();
-            if (time != null)
-            {
-                time.fontSize = 28;
-                SetRect(time.rectTransform, new Vector2(125f, 40f), new Vector2(58f, 0f));
-            }
-
-            RectTransform accent = timer.Find("Accent") as RectTransform;
-            if (accent != null)
-                SetRect(accent, new Vector2(252f, 4f), new Vector2(0f, -22f));
+            Text label = CreateText(
+                "Label",
+                rank.transform,
+                rankLabels[i],
+                10,
+                TextAnchor.MiddleCenter,
+                FontStyle.Bold,
+                new Color32(16, 18, 20, 255));
+            Stretch(label.rectTransform);
+            rankIndicators[i] = rank;
         }
 
-        RectTransform score = combatView.Find("ScorePanel") as RectTransform;
-        if (score != null)
+        Text scoreText = CreateText(
+            "Score",
+            scoreObject.transform,
+            "점수: <color=#FFC51C>0</color> <color=#FFC51C>(0)</color>/6000",
+            18,
+            TextAnchor.MiddleLeft,
+            FontStyle.Bold,
+            new Color32(235, 239, 240, 255));
+        SetRect(scoreText.rectTransform, new Vector2(248f, 34f), new Vector2(35f, 0f));
+        scoreText.supportRichText = true;
+
+        Image fairyBackground = CreateImage(
+            "FairyIconBackground",
+            scoreObject.transform,
+            fairyBackgroundSprite,
+            Color.white);
+        SetRect(fairyBackground.rectTransform, new Vector2(58f, 54f), new Vector2(180f, 0f));
+        fairyBackground.preserveAspect = true;
+
+        Image fairyIcon = CreateImage(
+            "FairyIcon",
+            scoreObject.transform,
+            fairySprite,
+            Color.white);
+        SetRect(fairyIcon.rectTransform, new Vector2(45f, 45f), new Vector2(178f, 0f));
+        fairyIcon.preserveAspect = true;
+
+        return new AssaultInfoView
         {
-            score.anchorMin = Vector2.one;
-            score.anchorMax = Vector2.one;
-            score.pivot = Vector2.one;
-            score.sizeDelta = new Vector2(440f, 62f);
-            score.anchoredPosition = new Vector2(-42f, -190f);
-
-            Text label = score.Find("ScoreLabel")?.GetComponent<Text>();
-            if (label != null)
-            {
-                label.text = "SCORE";
-                label.fontSize = 15;
-                SetRect(label.rectTransform, new Vector2(88f, 24f), new Vector2(-165f, 15f));
-            }
-
-            Text scoreText = score.Find("Score")?.GetComponent<Text>();
-            if (scoreText != null)
-            {
-                scoreText.fontSize = 30;
-                SetRect(scoreText.rectTransform, new Vector2(176f, 42f), new Vector2(-23f, 10f));
-            }
-
-            Text damage = score.Find("Damage")?.GetComponent<Text>();
-            if (damage != null)
-            {
-                damage.fontSize = 12;
-                SetRect(damage.rectTransform, new Vector2(190f, 22f), new Vector2(115f, 10f));
-            }
-
-            RectTransform track = score.Find("ScoreTrack") as RectTransform;
-            if (track != null)
-                SetRect(track, new Vector2(404f, 6f), new Vector2(0f, -25f));
-        }
+            timerProgressFill = progressFill,
+            rankIndicators = rankIndicators
+        };
     }
 
-    private static BossView EnsureBossStatusView(Transform combatView)
+    /// <summary>
+    /// 추출한 원본 조각으로 보스 체력·그로기·초상을 하나의 프레임에 조립한다.
+    /// 외곽과 게이지 바탕은 검게 사용하고 실제 수치만 색이 있는 게이지로 표시한다.
+    /// </summary>
+    private static BossView RebuildBossStatusView(Transform combatView)
     {
         Transform existing = combatView.Find("BossStatusPanel");
         if (existing != null)
-        {
-            return new BossView
-            {
-                healthFill = existing.Find("Health/Fill")?.GetComponent<Image>(),
-                stunFill = existing.Find("Stun/Fill")?.GetComponent<Image>(),
-                healthText = existing.Find("HealthText")?.GetComponent<Text>(),
-                stunText = existing.Find("StunText")?.GetComponent<Text>()
-            };
-        }
+            UnityEngine.Object.DestroyImmediate(existing.gameObject);
 
-        Sprite healthFrame = LoadSprite("player_hp_frame");
-        Sprite healthFillSprite = LoadSprite("player_hp_fill");
-        Sprite stunFrame = LoadSprite("player_energy_frame");
-        Sprite stunFillSprite = LoadSprite("enemy_stun_fill");
-        Sprite portraitFrame = LoadElementSprite("anomaly_disc_back");
+        Sprite outerMaskSprite = LoadBossStatusSprite("boss_outer_mask");
+        Sprite healthBackgroundSprite = LoadBossStatusSprite("boss_health_background");
+        Sprite healthFillSprite = LoadBossStatusSprite("boss_health_fill");
+        Sprite stunFillSprite = LoadBossStatusSprite("boss_stun_fill");
+        Sprite portraitMaskSprite = LoadBossStatusSprite("boss_portrait_mask");
+        Sprite portraitSprite = LoadBossStatusSprite("boss_portrait_full");
 
-        Image panel = CreateImage(
-            "BossStatusPanel",
-            combatView,
-            null,
-            new Color32(7, 9, 10, 232));
-        RectTransform panelRect = panel.rectTransform;
+        GameObject panel = CreateUiObject("BossStatusPanel", combatView);
+        RectTransform panelRect = panel.GetComponent<RectTransform>();
         panelRect.anchorMin = Vector2.one;
         panelRect.anchorMax = Vector2.one;
         panelRect.pivot = Vector2.one;
-        panelRect.sizeDelta = new Vector2(670f, 90f);
-        panelRect.anchoredPosition = new Vector2(-42f, -32f);
+        panelRect.sizeDelta = new Vector2(650f, 70f);
+        panelRect.anchoredPosition = new Vector2(-42f, -22f);
 
-        Image accent = CreateImage(
-            "Accent",
-            panel.transform,
-            null,
-            new Color32(255, 104, 24, 255));
-        SetRect(accent.rectTransform, new Vector2(7f, 76f), new Vector2(-329f, 0f));
+        GameObject sourceFrame = CreateUiObject("SourceFrame", panel.transform);
+        Stretch(sourceFrame.GetComponent<RectTransform>());
 
-        Text level = CreateText(
-            "BossLevel",
-            panel.transform,
-            "08",
-            30,
-            TextAnchor.MiddleCenter,
-            FontStyle.BoldAndItalic,
-            new Color32(255, 149, 20, 255));
-        SetRect(level.rectTransform, new Vector2(52f, 48f), new Vector2(-296f, 5f));
+        Image outerMask = CreateImage(
+            "BossOuterMask",
+            sourceFrame.transform,
+            outerMaskSprite,
+            new Color32(2, 3, 4, 255));
+        SetRect(outerMask.rectTransform, new Vector2(584f, 66f), new Vector2(4f, 0f));
 
-        Text name = CreateText(
-            "BossName",
-            panel.transform,
-            "DEAD END BUTCHER",
-            14,
-            TextAnchor.MiddleLeft,
-            FontStyle.Bold,
-            Color.white);
-        SetRect(name.rectTransform, new Vector2(300f, 20f), new Vector2(-120f, 33f));
+        Image healthBackground = CreateImage(
+            "HealthBackground",
+            sourceFrame.transform,
+            healthBackgroundSprite,
+            new Color32(2, 3, 4, 255));
+        SetRect(
+            healthBackground.rectTransform,
+            new Vector2(464f, 40f),
+            new Vector2(-46f, 7f));
+        healthBackground.rectTransform.localScale = new Vector3(-1f, 1f, 1f);
 
-        GaugeView health = CreateGauge(
-            "Health",
-            panel.transform,
-            new Vector2(506f, 23f),
-            new Vector2(-17f, 13f),
-            healthFrame,
+        GameObject healthTrack = CreateUiObject("Health", sourceFrame.transform);
+        SetRect(
+            healthTrack.GetComponent<RectTransform>(),
+            new Vector2(454f, 12f),
+            new Vector2(-51f, 10f));
+        Image healthFill = CreateImage(
+            "Fill",
+            healthTrack.transform,
             healthFillSprite,
-            new Vector4(5f, 3f, 5f, 3f));
-        health.fill.color = new Color32(93, 238, 35, 255);
-
-        GaugeView stun = CreateGauge(
-            "Stun",
-            panel.transform,
-            new Vector2(420f, 14f),
-            new Vector2(-49f, -18f),
-            stunFrame,
-            stunFillSprite,
-            new Vector4(4f, 3f, 4f, 3f));
-        stun.fill.color = new Color32(255, 205, 24, 255);
-
-        Text healthText = CreateText(
-            "HealthText",
-            panel.transform,
-            "-- / --",
-            12,
-            TextAnchor.MiddleRight,
-            FontStyle.Bold,
             Color.white);
-        SetRect(healthText.rectTransform, new Vector2(118f, 20f), new Vector2(183f, 33f));
+        Stretch(healthFill.rectTransform);
+        ConfigureHorizontalFill(healthFill);
+
+        Image stunBackground = CreateImage(
+            "StunBackground",
+            sourceFrame.transform,
+            stunFillSprite,
+            new Color32(2, 3, 4, 255));
+        SetRect(
+            stunBackground.rectTransform,
+            new Vector2(440f, 10f),
+            new Vector2(-58f, -15f));
+
+        GameObject stunTrack = CreateUiObject("Stun", sourceFrame.transform);
+        SetRect(
+            stunTrack.GetComponent<RectTransform>(),
+            new Vector2(432f, 7f),
+            new Vector2(-62f, -15f));
+        Image stunFill = CreateImage(
+            "Fill",
+            stunTrack.transform,
+            stunFillSprite,
+            new Color32(255, 205, 24, 255));
+        Stretch(stunFill.rectTransform);
+        ConfigureHorizontalFill(stunFill);
 
         Text stunText = CreateText(
             "StunText",
-            panel.transform,
-            "DAZE 0%",
-            13,
-            TextAnchor.MiddleRight,
+            sourceFrame.transform,
+            "00",
+            34,
+            TextAnchor.MiddleCenter,
             FontStyle.BoldAndItalic,
-            new Color32(255, 205, 24, 255));
-        SetRect(stunText.rectTransform, new Vector2(86f, 20f), new Vector2(197f, -18f));
+            new Color32(255, 149, 20, 255));
+        SetRect(stunText.rectTransform, new Vector2(58f, 46f), new Vector2(-307f, 8f));
+
+        Image portraitMask = CreateImage(
+            "PortraitMask",
+            sourceFrame.transform,
+            portraitMaskSprite,
+            Color.white);
+        SetRect(
+            portraitMask.rectTransform,
+            new Vector2(96f, 56f),
+            new Vector2(234f, 1f));
+        Mask portraitClip = portraitMask.gameObject.AddComponent<Mask>();
+        portraitClip.showMaskGraphic = false;
 
         Image portrait = CreateImage(
             "BossPortrait",
-            panel.transform,
-            portraitFrame,
-            new Color32(232, 67, 35, 255));
-        SetRect(portrait.rectTransform, new Vector2(66f, 66f), new Vector2(296f, 0f));
-        portrait.preserveAspect = true;
-
-        Text portraitLabel = CreateText(
-            "Label",
-            portrait.transform,
-            "DEB",
-            15,
-            TextAnchor.MiddleCenter,
-            FontStyle.Bold,
+            portraitMask.transform,
+            portraitSprite,
             Color.white);
-        Stretch(portraitLabel.rectTransform);
+        SetRect(portrait.rectTransform, new Vector2(112f, 155f), new Vector2(5f, -20f));
+        portrait.preserveAspect = true;
 
         return new BossView
         {
-            healthFill = health.fill,
-            stunFill = stun.fill,
-            healthText = healthText,
+            healthFill = healthFill,
+            stunFill = stunFill,
+            healthText = null,
             stunText = stunText
         };
     }
 
+    private static void ConfigureHorizontalFill(Image image)
+    {
+        image.type = Image.Type.Filled;
+        image.fillMethod = Image.FillMethod.Horizontal;
+        image.fillOrigin = (int)Image.OriginHorizontal.Left;
+        image.fillClockwise = true;
+        image.fillAmount = 1f;
+    }
+
     private static void EnsureActionHud(Transform combatView)
     {
-        if (combatView.Find("ActionHUD") != null)
-            return;
+        Transform existing = combatView.Find("ActionHUD");
+        if (existing != null)
+            UnityEngine.Object.DestroyImmediate(existing.gameObject);
 
         Sprite disc = LoadElementSprite("anomaly_disc_back");
-        Sprite ring = LoadElementSprite("anomaly_ring_frame");
-        Sprite pipSprite = LoadSprite("energy_threshold_marker");
+        Sprite supportSegmentSprite = LoadElementSprite("anomaly_ring_fill");
+        Sprite attackIcon = LoadActionButtonSprite("action_attack");
+        Sprite attackOutline = LoadActionButtonSprite("action_attack_outline");
+        Sprite dodgeIcon = LoadActionButtonSprite("action_dodge");
+        Sprite skillNormalIcon = LoadActionButtonSprite("action_skill_normal");
+        Sprite skillEnhancedIcon = LoadActionButtonSprite("action_skill_enhanced");
+        Sprite supportIcon = LoadActionButtonSprite("action_support");
+        Sprite supportOutline = LoadActionButtonSprite("action_support_outline");
+        Sprite ultimateIcon = LoadActionButtonSprite("action_ultimate");
+        Sprite readySheen = LoadActionButtonSprite("action_ready_sheen");
 
         GameObject root = CreateUiObject("ActionHUD", combatView);
         RectTransform rootRect = root.GetComponent<RectTransform>();
@@ -292,42 +442,106 @@ internal static class CombatHudLayoutUpgrader
         rootRect.anchoredPosition = new Vector2(-42f, 34f);
 
         CombatActionHUD.ButtonView attack = CreateActionButton(
-            "Attack", root.transform, new Vector2(-142f, -82f), "ATK", "LMB", disc, ring);
+            "Attack",
+            root.transform,
+            new Vector2(-142f, -82f),
+            "LMB",
+            disc,
+            attackIcon,
+            null,
+            attackOutline,
+            readySheen,
+            new Vector2(78f, 78f),
+            false,
+            false);
         CombatActionHUD.ButtonView dodge = CreateActionButton(
-            "Dodge", root.transform, new Vector2(-46f, -82f), ">>", "SHIFT", disc, ring);
+            "Dodge",
+            root.transform,
+            new Vector2(-46f, -82f),
+            "SHIFT",
+            disc,
+            dodgeIcon,
+            null,
+            null,
+            readySheen,
+            new Vector2(82f, 82f),
+            false,
+            false);
         CombatActionHUD.ButtonView skill = CreateActionButton(
-            "Skill", root.transform, new Vector2(50f, -82f), "EX", "E", disc, ring);
+            "Skill",
+            root.transform,
+            new Vector2(50f, -82f),
+            "E",
+            disc,
+            skillNormalIcon,
+            skillEnhancedIcon,
+            null,
+            readySheen,
+            new Vector2(82f, 82f),
+            true,
+            false);
         CombatActionHUD.ButtonView support = CreateActionButton(
-            "Support", root.transform, new Vector2(146f, -82f), "SW", "SPACE", disc, ring);
+            "Support",
+            root.transform,
+            new Vector2(146f, -82f),
+            "SPACE",
+            disc,
+            supportIcon,
+            null,
+            supportOutline,
+            readySheen,
+            new Vector2(58f, 56f),
+            false,
+            false);
         CombatActionHUD.ButtonView ultimate = CreateActionButton(
-            "Ultimate", root.transform, new Vector2(146f, 36f), "ULT", "Q", disc, ring);
+            "Ultimate",
+            root.transform,
+            new Vector2(146f, 36f),
+            "Q",
+            disc,
+            ultimateIcon,
+            ultimateIcon,
+            null,
+            readySheen,
+            new Vector2(82f, 82f),
+            true,
+            true);
 
-        Image[] supportPips = new Image[6];
-        for (int i = 0; i < supportPips.Length; i++)
+        Image[] supportSegments = new Image[6];
+        for (int i = 0; i < supportSegments.Length; i++)
         {
-            float angle = (30f + i * 60f) * Mathf.Deg2Rad;
-            Vector2 offset = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * 50f;
-            Image pip = CreateImage(
+            Image segment = CreateImage(
                 $"SupportPoint_{i + 1:00}",
                 support.root.transform,
-                pipSprite,
+                supportSegmentSprite,
                 new Color32(255, 207, 19, 255));
-            SetRect(pip.rectTransform, new Vector2(13f, 13f), offset);
-            supportPips[i] = pip;
+            SetRect(segment.rectTransform, new Vector2(104f, 104f), new Vector2(0f, 13f));
+            segment.type = Image.Type.Filled;
+            segment.fillMethod = Image.FillMethod.Radial360;
+            segment.fillOrigin = (int)Image.Origin360.Top;
+            segment.fillClockwise = true;
+            segment.fillAmount = 0.15f;
+            segment.rectTransform.localEulerAngles = new Vector3(0f, 0f, -i * 60f);
+            supportSegments[i] = segment;
         }
 
         CombatActionHUD actionHud = root.AddComponent<CombatActionHUD>();
-        actionHud.Configure(attack, dodge, skill, support, ultimate, supportPips);
+        actionHud.Configure(attack, dodge, skill, support, ultimate, supportSegments);
     }
 
     private static CombatActionHUD.ButtonView CreateActionButton(
         string name,
         Transform parent,
         Vector2 position,
-        string symbol,
         string key,
         Sprite disc,
-        Sprite ring)
+        Sprite normalIcon,
+        Sprite readyIcon,
+        Sprite frameSprite,
+        Sprite sheenSprite,
+        Vector2 iconSize,
+        bool useReadySheen,
+        bool dimUntilReady)
     {
         GameObject root = CreateUiObject(name, parent);
         SetRect(root.GetComponent<RectTransform>(), new Vector2(86f, 108f), position);
@@ -341,23 +555,50 @@ internal static class CombatHudLayoutUpgrader
         SetRect(background.rectTransform, new Vector2(78f, 78f), new Vector2(0f, 13f));
         background.preserveAspect = true;
 
-        Image frame = CreateImage(
-            "Frame",
+        Image icon = CreateImage(
+            "Icon",
             root.transform,
-            ring,
-            new Color32(151, 157, 157, 255));
-        SetRect(frame.rectTransform, new Vector2(82f, 82f), new Vector2(0f, 13f));
-        frame.preserveAspect = true;
+            normalIcon,
+            Color.white);
+        SetRect(icon.rectTransform, iconSize, new Vector2(0f, 13f));
+        icon.preserveAspect = true;
 
-        Text symbolText = CreateText(
-            "Symbol",
-            root.transform,
-            symbol,
-            symbol.Length > 2 ? 17 : 24,
-            TextAnchor.MiddleCenter,
-            FontStyle.Bold,
-            new Color32(151, 157, 157, 255));
-        SetRect(symbolText.rectTransform, new Vector2(60f, 46f), new Vector2(0f, 13f));
+        Image frame = null;
+        if (frameSprite != null)
+        {
+            frame = CreateImage("Frame", root.transform, frameSprite, Color.white);
+            SetRect(frame.rectTransform, new Vector2(88f, 88f), new Vector2(0f, 13f));
+            frame.preserveAspect = true;
+        }
+
+        Image sheen = null;
+        if (useReadySheen && sheenSprite != null)
+        {
+            Image sheenViewport = CreateImage(
+                "ReadySheenMask",
+                root.transform,
+                disc,
+                Color.white);
+            SetRect(
+                sheenViewport.rectTransform,
+                new Vector2(82f, 82f),
+                new Vector2(0f, 13f));
+            sheenViewport.preserveAspect = true;
+            Mask circularMask = sheenViewport.gameObject.AddComponent<Mask>();
+            circularMask.showMaskGraphic = false;
+
+            sheen = CreateImage(
+                "ReadySheen",
+                sheenViewport.transform,
+                sheenSprite,
+                Color.white);
+            SetRect(
+                sheen.rectTransform,
+                new Vector2(116f, 66f),
+                new Vector2(-104f, 104f));
+            sheen.preserveAspect = true;
+            sheen.gameObject.SetActive(false);
+        }
 
         Image keyBack = CreateImage(
             "KeyBack",
@@ -383,12 +624,19 @@ internal static class CombatHudLayoutUpgrader
             root = group,
             background = background,
             frame = frame,
-            symbol = symbolText,
-            keyLabel = keyText
+            icon = icon,
+            keyLabel = keyText,
+            normalSprite = normalIcon,
+            readySprite = readyIcon,
+            readySheen = sheen,
+            dimUntilReady = dimUntilReady
         };
     }
 
-    private static void ConfigureAssaultHud(GameObject root, BossView boss)
+    private static void ConfigureAssaultHud(
+        GameObject root,
+        BossView boss,
+        AssaultInfoView assaultInfo)
     {
         AssaultBattleHUD hud = root.GetComponent<AssaultBattleHUD>();
         if (hud == null)
@@ -419,6 +667,10 @@ internal static class CombatHudLayoutUpgrader
             wipeout?.Find("WipeoutText")?.GetComponent<Text>(),
             resultPanel?.Find("BossImage")?.GetComponent<Image>(),
             resultPanel?.Find("ExitButton")?.GetComponent<Button>());
+
+        hud.ConfigureAssaultInfoView(
+            assaultInfo.timerProgressFill,
+            assaultInfo.rankIndicators);
     }
 
     private static void UpgradeEnemyWorldHud()
@@ -432,7 +684,7 @@ internal static class CombatHudLayoutUpgrader
 
             RectTransform visuals = root.transform.Find("Visuals") as RectTransform;
             if (visuals != null)
-                visuals.localScale = Vector3.one * 1.4f;
+                visuals.localScale = Vector3.one * 0.98f;
 
             PrefabUtility.SaveAsPrefabAsset(root, EnemyPrefabPath);
         }
@@ -529,6 +781,61 @@ internal static class CombatHudLayoutUpgrader
             $"Assets/Sprites/ZZZHudV2/Elements/{name}.png");
     }
 
+    private static Sprite LoadActionButtonSprite(string name)
+    {
+        return AssetDatabase.LoadAssetAtPath<Sprite>(
+            $"{ActionButtonSpriteRoot}/{name}.png");
+    }
+
+    private static Sprite LoadAssaultFairySprite(string name)
+    {
+        string path = $"{AssaultFairySpriteRoot}/{name}.png";
+        Sprite sprite = AssetDatabase.LoadAssetAtPath<Sprite>(path);
+        if (sprite != null)
+            return sprite;
+
+        AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceSynchronousImport);
+        sprite = AssetDatabase.LoadAssetAtPath<Sprite>(path);
+        if (sprite == null)
+            Debug.LogError($"Fairy 강습전 HUD 스프라이트를 가져오지 못했습니다: {path}");
+        return sprite;
+    }
+
+    /// <summary>
+    /// 추출한 보스 HUD 이미지를 UI용 단일 Sprite 설정으로 통일해 불러온다.
+    /// 얇은 게이지의 가장자리가 뭉개지지 않도록 밉맵과 압축은 사용하지 않는다.
+    /// </summary>
+    private static Sprite LoadBossStatusSprite(string name)
+    {
+        string path = $"{BossStatusSpriteRoot}/{name}.png";
+        AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceSynchronousImport);
+
+        TextureImporter importer = AssetImporter.GetAtPath(path) as TextureImporter;
+        if (importer != null &&
+            (importer.textureType != TextureImporterType.Sprite ||
+             importer.spriteImportMode != SpriteImportMode.Single ||
+             importer.mipmapEnabled ||
+             importer.textureCompression != TextureImporterCompression.Uncompressed ||
+             importer.wrapMode != TextureWrapMode.Clamp))
+        {
+            importer.textureType = TextureImporterType.Sprite;
+            importer.spriteImportMode = SpriteImportMode.Single;
+            importer.spritePixelsPerUnit = 100f;
+            importer.alphaSource = TextureImporterAlphaSource.FromInput;
+            importer.alphaIsTransparency = true;
+            importer.mipmapEnabled = false;
+            importer.textureCompression = TextureImporterCompression.Uncompressed;
+            importer.filterMode = FilterMode.Bilinear;
+            importer.wrapMode = TextureWrapMode.Clamp;
+            importer.SaveAndReimport();
+        }
+
+        Sprite sprite = AssetDatabase.LoadAssetAtPath<Sprite>(path);
+        if (sprite == null)
+            Debug.LogError($"보스 상태 HUD 원본 스프라이트를 가져오지 못했습니다: {path}");
+        return sprite;
+    }
+
     private static void SetRect(RectTransform rect, Vector2 size, Vector2 position)
     {
         rect.anchorMin = new Vector2(0.5f, 0.5f);
@@ -560,6 +867,12 @@ internal static class CombatHudLayoutUpgrader
         public Image stunFill;
         public Text healthText;
         public Text stunText;
+    }
+
+    private sealed class AssaultInfoView
+    {
+        public Image timerProgressFill;
+        public Image[] rankIndicators;
     }
 
     private sealed class GaugeView

@@ -26,7 +26,28 @@ internal sealed class CombatHudTexturePostprocessor : AssetPostprocessor
         importer.npotScale = TextureImporterNPOTScale.None;
         importer.textureCompression = TextureImporterCompression.Uncompressed;
         importer.maxTextureSize = 2048;
-        importer.spriteBorder = Vector4.zero;
+        importer.spriteBorder = GetSpriteBorder(assetPath);
+    }
+
+    private static Vector4 GetSpriteBorder(string path)
+    {
+        if (!path.Contains("/AssaultFairy/"))
+            return Vector4.zero;
+
+        string fileName = Path.GetFileNameWithoutExtension(path);
+        switch (fileName)
+        {
+            case "ProBg03":
+                return new Vector4(12f, 10f, 12f, 10f);
+            case "FairyTime_Pro":
+            case "FairyTime_ProLine":
+                return new Vector4(14f, 10f, 14f, 10f);
+            case "FairyIconBG":
+            case "FairyIconBG02":
+                return new Vector4(34f, 34f, 34f, 34f);
+            default:
+                return Vector4.zero;
+        }
     }
 }
 
@@ -433,11 +454,12 @@ internal static class CombatHudPrefabBuilder
             "StunPercent",
             visuals.transform,
             "64",
-            11,
+            14,
             TextAnchor.MiddleRight,
             FontStyle.BoldAndItalic,
             new Color32(255, 205, 24, 255));
-        SetRect(stunPercent.gameObject, new Vector2(28f, 16f), new Vector2(16f, 8f));
+        SetRect(stunPercent.gameObject, new Vector2(34f, 20f), new Vector2(16f, 8f));
+        AddTextOutline(stunPercent, new Vector2(1.5f, -1.5f));
 
         Text damageMultiplier = CreateText(
             "DamageMultiplier",
@@ -907,11 +929,22 @@ internal static class CombatHudPrefabBuilder
         // 생성된 HUD가 그림만 가진 채 남지 않도록 파티 데이터 연결 관리자도 함께 저장한다.
         canvasObject.AddComponent<UIManager>();
 
-        RectTransform player = InstantiateUiPrefab(playerPrefab, canvasObject.transform);
-        player.anchorMin = new Vector2(0f, 1f);
-        player.anchorMax = new Vector2(0f, 1f);
-        player.pivot = new Vector2(0f, 1f);
-        player.anchoredPosition = new Vector2(64f, -48f);
+        GameObject assembledPlayer = AssetDatabase.LoadAssetAtPath<GameObject>(
+            "Assets/Prefabs/UI/ZZZHudV2/ZZZ_PlayerPartyHUD_Assembly.prefab");
+        RectTransform player = InstantiateUiPrefab(assembledPlayer != null ? assembledPlayer : playerPrefab,
+            canvasObject.transform);
+        if (assembledPlayer == null)
+        {
+            player.anchorMin = new Vector2(0f, 1f);
+            player.anchorMax = new Vector2(0f, 1f);
+            player.pivot = new Vector2(0f, 1f);
+            player.anchoredPosition = new Vector2(64f, -48f);
+        }
+        else
+        {
+            float gameScale = PlayerPartyHudGameInstaller.DefaultGameHudScale;
+            player.localScale = new Vector3(gameScale, gameScale, 1f);
+        }
 
         RectTransform enemy = InstantiateUiPrefab(enemyPrefab, canvasObject.transform);
         enemy.anchorMin = new Vector2(0.5f, 0.5f);

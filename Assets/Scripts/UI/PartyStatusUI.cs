@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 using DG.Tweening;
@@ -28,6 +29,7 @@ public sealed class PartyStatusUI : MonoBehaviour
     {
         public Image decibelFill;
         public Text decibelText;
+        public TMP_Text decibelValueText;
         public Image[] supportPointPips;
     }
 
@@ -59,6 +61,8 @@ public sealed class PartyStatusUI : MonoBehaviour
     [SerializeField] private Color ultimateIndicatorReadyColor = new Color32(255, 153, 18, 255);
     [SerializeField] private Color ultimateIndicatorUnavailableColor = new Color32(72, 77, 77, 255);
 
+    private DecibelHudText decibelHudText;
+
     private float[] healthNormalized;
     private float[] healthCurrent;
     private float[] healthMaximum;
@@ -77,6 +81,7 @@ public sealed class PartyStatusUI : MonoBehaviour
 
         EnsureHealthCache(true);
         ConfigureEnergyImages();
+        ConfigureDecibelText();
         RefreshNow();
     }
 
@@ -92,6 +97,7 @@ public sealed class PartyStatusUI : MonoBehaviour
         memberPortraits = portraits;
         combatResources = resources;
         ConfigureEnergyImages();
+        ConfigureDecibelText();
         RefreshNow();
     }
 
@@ -290,11 +296,11 @@ public sealed class PartyStatusUI : MonoBehaviour
             combatResources.decibelFill.color = ultimateReady ? decibelReadyColor : decibelNormalColor;
         }
 
-        if (combatResources.decibelText != null)
+        if (combatResources.decibelValueText != null)
         {
-            combatResources.decibelText.text =
-                $"{Mathf.RoundToInt(member.CurrentDecibel)} / {Mathf.RoundToInt(decibelMaximum)}";
-            combatResources.decibelText.color = ultimateReady ? decibelReadyColor : Color.white;
+            if (decibelHudText == null)
+                ConfigureDecibelText();
+            decibelHudText.SetValue(member.CurrentDecibel);
         }
 
         SupportPointManager support = partyManager != null
@@ -403,6 +409,19 @@ public sealed class PartyStatusUI : MonoBehaviour
         slot.energyFill.fillClockwise = true;
     }
 
+    /// <summary>
+    /// 숫자·PTS·구간별 색상은 전용 표시 컴포넌트에서 함께 갱신한다.
+    /// </summary>
+    private void ConfigureDecibelText()
+    {
+        TMP_Text text = combatResources?.decibelValueText;
+        if (text == null)
+            return;
+
+        decibelHudText = text.GetComponent<DecibelHudText>();
+        if (decibelHudText == null)
+            decibelHudText = text.gameObject.AddComponent<DecibelHudText>();
+    }
     private static Image ResolveUltimateReadyIndicator(SlotView slot)
     {
         if (slot == null || slot.ultimateReadyIndicator != null)

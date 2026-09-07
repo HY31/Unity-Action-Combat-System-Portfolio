@@ -8,6 +8,7 @@ using UnityEngine.UI;
 [DisallowMultipleComponent]
 public sealed class EnemyWorldStatusUI : MonoBehaviour
 {
+    private const float GaugeEdgeHorizontalShear = 0.4663f;
     [Header("Target")]
     [SerializeField] private EnemyController targetEnemy;
     [SerializeField] private Transform worldAnchor;
@@ -19,36 +20,86 @@ public sealed class EnemyWorldStatusUI : MonoBehaviour
     [Header("Views")]
     [SerializeField] private GameObject visualRoot;
     [SerializeField] private Image hpFill;
+    [SerializeField] private Image hpDamageTrail;
     [SerializeField] private Image stunFill;
     [SerializeField] private Text stunPercentText;
     [SerializeField] private Text damageMultiplierText;
     [SerializeField] private GameObject anomalyIconRoot;
     [SerializeField] private Image anomalyFill;
+    [SerializeField] private Image anomalyBackground;
     [SerializeField] private Image anomalyIcon;
     [SerializeField] private ElementIconEntry[] anomalyIcons;
 
     [Header("Colors")]
     [SerializeField] private Color normalStunColor = new Color32(255, 205, 24, 255);
-    [SerializeField] private Color[] groggyFlashColors =
-    {
-        new Color32(146, 88, 255, 255),
-        new Color32(50, 191, 255, 255),
-        new Color32(255, 220, 35, 255),
-        new Color32(255, 55, 42, 255)
-    };
     [SerializeField] private Color exhaustedGroggyColor = new Color32(112, 118, 126, 255);
-    [SerializeField, Min(1f)] private float groggyFlashRate = 12f;
+    [SerializeField, Min(0.1f)] private float groggyHueCyclesPerSecond = 1.6f;
+
+    [Header("Health Trail")]
+    [SerializeField, Min(0f)] private float healthTrailDelay = 0.12f;
+    [SerializeField, Min(0.01f)] private float healthTrailCatchupDuration = 0.24f;
 
     public EnemyController TargetEnemy => targetEnemy;
 
     private float nextTargetSearchTime;
+    private float displayedHpTrail = -1f;
+    private float lastHpNormalized = -1f;
+    private float healthTrailDelayRemaining;
 
     private void Awake()
     {
+        ResolveAnomalyParts();
+        ApplyFinalLayout();
+        ConfigureSlantedGaugeEdges();
+        ConfigureStunPercentOutline();
+
         if (damageMultiplierText != null)
             damageMultiplierText.gameObject.SetActive(false);
 
         ResolveTarget();
+    }
+
+    /// <summary>
+    /// 회색 소진 단계에서도 그로기 수치가 게이지 배경에 묻히지 않도록 검은 외곽선을 보장한다.
+    /// </summary>
+    private void ConfigureStunPercentOutline()
+    {
+        if (stunPercentText == null)
+            return;
+
+        BossHudTextShear shear =
+            stunPercentText.GetComponent<BossHudTextShear>();
+        if (shear == null)
+            shear = stunPercentText.gameObject.AddComponent<BossHudTextShear>();
+        shear.HorizontalShear = Mathf.Tan(20f * Mathf.Deg2Rad);
+
+        Outline outline = stunPercentText.GetComponent<Outline>();
+        if (outline == null)
+            outline = stunPercentText.gameObject.AddComponent<Outline>();
+
+        outline.effectColor = new Color(0f, 0f, 0f, 0.95f);
+        outline.effectDistance = new Vector2(1.5f, -1.5f);
+        outline.useGraphicAlpha = true;
+    }
+
+    private void ConfigureSlantedGaugeEdges()
+    {
+        ConfigureSlantedGaugeEdge(hpFill);
+        ConfigureSlantedGaugeEdge(hpDamageTrail);
+        ConfigureSlantedGaugeEdge(stunFill);
+    }
+
+    private static void ConfigureSlantedGaugeEdge(Image image)
+    {
+        if (image == null)
+            return;
+
+        SlantedFillEdgeEffect effect =
+            image.GetComponent<SlantedFillEdgeEffect>();
+        if (effect == null)
+            effect = image.gameObject.AddComponent<SlantedFillEdgeEffect>();
+
+        effect.HorizontalShear = GaugeEdgeHorizontalShear;
     }
 
     private void OnEnable()
@@ -97,24 +148,86 @@ public sealed class EnemyWorldStatusUI : MonoBehaviour
             return;
 
         // 전투 계산은 EnemyController가 담당하고 UI는 정규화된 결과만 표시한다.
-        hpFill.fillAmount = targetEnemy.CurrentHpNormalized;
-        stunFill.fillAmount = targetEnemy.CurrentStunNormalized;
+        UpdateHealthVisual(targetEnemy.CurrentHpNormalized);
+        float displayedStunNormalized = ResolveDisplayedStunNormalized();
+        stunFill.fillAmount = displayedStunNormalized;
         Color stunColor = ResolveStunColor();
         stunFill.color = stunColor;
 
         if (stunPercentText != null)
         {
-            stunPercentText.text = Mathf.RoundToInt(targetEnemy.CurrentStunNormalized * 100f).ToString("00");
-            stunPercentText.color = stunColor;
+            int displayedStun = Mathf.Clamp(
+                Mathf.RoundToInt(displayedStunNormalized * 100f),
+                0,
+                EnemyController.MaxDisplayedStunPercent);
+            stunPercentText.text = displayedStun.ToString("00");
+            // 콤보 스킬을 모두 사용한 소진 단계에는 게이지와 함께 숫자도 회색으로 표시한다.
+            stunPercentText.color = targetEnemy.IsChainSkillSequenceComplete
+                ? exhaustedGroggyColor
+                : stunColor;
         }
 
         if (damageMultiplierText != null)
         {
             damageMultiplierText.gameObject.SetActive(targetEnemy.IsGroggy);
-            damageMultiplierText.text = $"DMG {Mathf.RoundToInt(targetEnemy.CurrentDamageTakenMultiplier * 100f)}%";
+            int multiplier = Mathf.RoundToInt(
+                targetEnemy.CurrentDamageTakenMultiplier * 100f);
+            damageMultiplierText.text =
+                $"<color=#E38B15>DMG</color> <color=#F0C62E>{multiplier}%</color>";
         }
 
         UpdateAnomalyVisual();
+    }
+
+
+    private void UpdateHealthVisual(float normalized)
+    {
+        normalized = Mathf.Clamp01(normalized);
+        hpFill.fillAmount = normalized;
+
+        if (hpDamageTrail == null)
+            return;
+
+        if (displayedHpTrail < 0f || lastHpNormalized < 0f)
+        {
+            displayedHpTrail = normalized;
+            lastHpNormalized = normalized;
+            hpDamageTrail.fillAmount = normalized;
+            return;
+        }
+
+        if (normalized > displayedHpTrail)
+            displayedHpTrail = normalized;
+
+        if (normalized < lastHpNormalized - 0.0001f)
+            healthTrailDelayRemaining = healthTrailDelay;
+
+        if (healthTrailDelayRemaining > 0f)
+        {
+            healthTrailDelayRemaining = Mathf.Max(
+                0f,
+                healthTrailDelayRemaining - Time.unscaledDeltaTime);
+        }
+        else
+        {
+            float speed = 1f / Mathf.Max(0.01f, healthTrailCatchupDuration);
+            displayedHpTrail = Mathf.MoveTowards(
+                displayedHpTrail,
+                normalized,
+                speed * Time.unscaledDeltaTime);
+        }
+
+        displayedHpTrail = Mathf.Max(displayedHpTrail, normalized);
+        hpDamageTrail.fillAmount = displayedHpTrail;
+        lastHpNormalized = normalized;
+    }
+
+    public void ConfigureHealthTrail(Image healthTrail)
+    {
+        hpDamageTrail = healthTrail;
+        displayedHpTrail = -1f;
+        lastHpNormalized = -1f;
+        healthTrailDelayRemaining = 0f;
     }
 
     public void Bind(EnemyController enemy, Transform anchor = null)
@@ -165,6 +278,76 @@ public sealed class EnemyWorldStatusUI : MonoBehaviour
     }
 
 
+    private void ApplyFinalLayout()
+    {
+        if (stunPercentText != null)
+        {
+            SetCenteredRect(
+                stunPercentText.rectTransform,
+                new Vector2(27f, 22f),
+                new Vector2(167.5f, 17f));
+        }
+
+        if (anomalyIconRoot == null)
+            return;
+
+        string[] stretchedLayers =
+        {
+            "AnomalyBack",
+            "AnomalyFrame"
+        };
+
+        for (int i = 0; i < stretchedLayers.Length; i++)
+        {
+            Transform layer = anomalyIconRoot.transform.Find(
+                stretchedLayers[i]);
+            if (layer is RectTransform layerRect)
+                StretchRect(layerRect);
+        }
+
+        if (anomalyFill != null)
+        {
+            SetCenteredRect(
+                anomalyFill.rectTransform,
+                new Vector2(57.17931f, 57.17931f),
+                new Vector2(7.52356f, -0.75236f));
+        }
+    }
+
+    private static void SetCenteredRect(
+        RectTransform rect,
+        Vector2 size,
+        Vector2 position)
+    {
+        rect.anchorMin = new Vector2(0.5f, 0.5f);
+        rect.anchorMax = new Vector2(0.5f, 0.5f);
+        rect.pivot = new Vector2(0.5f, 0.5f);
+        rect.sizeDelta = size;
+        rect.anchoredPosition = position;
+        rect.localScale = Vector3.one;
+    }
+
+    private static void StretchRect(RectTransform rect)
+    {
+        rect.anchorMin = Vector2.zero;
+        rect.anchorMax = Vector2.one;
+        rect.pivot = new Vector2(0.5f, 0.5f);
+        rect.offsetMin = Vector2.zero;
+        rect.offsetMax = Vector2.zero;
+        rect.localScale = Vector3.one;
+    }
+    private void ResolveAnomalyParts()
+    {
+        if (anomalyIconRoot == null)
+            return;
+
+        if (anomalyBackground == null)
+        {
+            Transform background = anomalyIconRoot.transform.Find("AnomalyBack");
+            if (background != null)
+                anomalyBackground = background.GetComponent<Image>();
+        }
+    }
     private void UpdateAnomalyVisual()
     {
         if (anomalyIconRoot == null || targetEnemy == null)
@@ -178,7 +361,18 @@ public sealed class EnemyWorldStatusUI : MonoBehaviour
         if (!visible)
             return;
 
+        ResolveAnomalyParts();
         Color elementColor = ResolveAnomalyColor(element);
+        if (anomalyBackground != null)
+        {
+            Color mutedColor = Color.Lerp(
+                new Color32(12, 16, 18, 255),
+                elementColor,
+                0.22f);
+            mutedColor.a = 1f;
+            anomalyBackground.color = mutedColor;
+        }
+
         if (anomalyFill != null)
         {
             anomalyFill.type = Image.Type.Filled;
@@ -207,7 +401,12 @@ public sealed class EnemyWorldStatusUI : MonoBehaviour
         }
 
         anomalyIcon.enabled = iconResolved;
-        anomalyIcon.color = elementColor;
+        anomalyIcon.color = Color.white;
+
+        RectTransform iconRect = anomalyIcon.rectTransform;
+        iconRect.anchoredPosition = new Vector2(7.52356f, -0.75236f);
+        float iconSize = element == CombatElement.Physical ? 35.02662f : 33.59255f;
+        iconRect.sizeDelta = new Vector2(iconSize, iconSize);
     }
 
     private static Color ResolveAnomalyColor(CombatElement element)
@@ -241,13 +440,20 @@ public sealed class EnemyWorldStatusUI : MonoBehaviour
             : GetGroggyFlashColor();
     }
 
+    private float ResolveDisplayedStunNormalized()
+    {
+        if (targetEnemy == null)
+            return 0f;
+
+        return Mathf.Clamp01(targetEnemy.CurrentStunNormalized);
+    }
+
     private Color GetGroggyFlashColor()
     {
-        if (groggyFlashColors == null || groggyFlashColors.Length == 0)
-            return normalStunColor;
-
-        int index = Mathf.FloorToInt(Time.unscaledTime * groggyFlashRate) % groggyFlashColors.Length;
-        return groggyFlashColors[index];
+        return Color.HSVToRGB(
+            Mathf.Repeat(Time.unscaledTime * groggyHueCyclesPerSecond, 1f),
+            0.8f,
+            1f);
     }
 
     private void ResolveTarget()

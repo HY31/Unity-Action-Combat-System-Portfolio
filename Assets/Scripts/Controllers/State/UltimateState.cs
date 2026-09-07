@@ -40,6 +40,7 @@ public class UltimateState : IPlayerState
     private bool cinematicActionTimeStarted;
     private bool ultimateActionStarted;
     private Transform requestedAssistTarget;
+    private EnemyController chainSkillEnemy;
     private RuntimeAnimatorController originalAnimatorController;
     private AnimatorOverrideController chainSkillAnimatorOverride;
 
@@ -59,6 +60,9 @@ public class UltimateState : IPlayerState
     {
         chainSkillPending = true;
         requestedAssistTarget = target;
+        chainSkillEnemy = target != null
+            ? target.GetComponentInParent<EnemyController>()
+            : null;
     }
 
     public void Enter()
@@ -629,6 +633,9 @@ public class UltimateState : IPlayerState
 
     public void Exit()
     {
+        if (isChainSkillEntry)
+            chainSkillEnemy?.NotifyChainSkillFinished();
+
         RestoreChainSkillAnimationOverride();
         // 어떤 경로로 상태를 빠져나가도 무적과 타격 판정이 남지 않게 정리한다.
         if (cinematicRequested && UltimateCinematicPlayer.IsPlaying)
@@ -646,6 +653,7 @@ public class UltimateState : IPlayerState
         ultimateActionStarted = false;
         isChainSkillEntry = false;
         chainSkillPending = false;
+        chainSkillEnemy = null;
         requestedAssistTarget = null;
         assistTarget = null;
         assistStopDistance = 0f;

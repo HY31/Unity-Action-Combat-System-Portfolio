@@ -4,7 +4,8 @@
 !.gitattributes
 !README.md
 !Docs/
-!Docs/**
+!Docs/**/
+!Docs/**/*.md
 !Assets/
 !Assets/Scripts/
 !Assets/Scripts/**/
@@ -12,3 +13,6 @@
 !Assets/Editor/
 !Assets/Editor/**/
 !Assets/Editor/**/*.cs
+!Assets/Shaders/
+!Assets/Shaders/**/
+!Assets/Shaders/**/*.shader

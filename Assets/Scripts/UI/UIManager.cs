@@ -14,6 +14,7 @@ public sealed class UIManager : MonoBehaviour
 
     [Header("HUD Views")]
     [SerializeField] private PartyStatusUI partyStatusUI;
+    [SerializeField] private PlayerPartyHudAssemblyPresenter assemblyPartyHUD;
     [SerializeField] private ChainSkillPromptUI chainSkillPromptUI;
     [SerializeField] private EnemyWorldStatusUI enemyStatusUI;
     [SerializeField] private AssaultBattleHUD assaultBattleHUD;
@@ -23,6 +24,7 @@ public sealed class UIManager : MonoBehaviour
     [SerializeField] private bool autoFindReferences = true;
 
     private PartyManager boundPartyManager;
+    private PlayerPartyHudAssemblyPresenter boundAssemblyPartyHUD;
     private PlayerController[] boundMembers = Array.Empty<PlayerController>();
     private SupportPointManager boundSupportPointManager;
     private ChainSkillPromptUI boundChainSkillPromptUI;
@@ -38,11 +40,14 @@ public sealed class UIManager : MonoBehaviour
 
         PartyStatusUI partyHud =
             UnityEngine.Object.FindFirstObjectByType<PartyStatusUI>();
-        if (partyHud == null)
+        PlayerPartyHudAssemblyPresenter assemblyHud =
+            UnityEngine.Object.FindFirstObjectByType<PlayerPartyHudAssemblyPresenter>();
+        if (partyHud == null && assemblyHud == null)
             return;
 
-        Canvas canvas = partyHud.GetComponentInParent<Canvas>();
-        GameObject host = canvas != null ? canvas.gameObject : partyHud.gameObject;
+        Component hud = assemblyHud != null ? (Component)assemblyHud : partyHud;
+        Canvas canvas = hud.GetComponentInParent<Canvas>();
+        GameObject host = canvas != null ? canvas.gameObject : hud.gameObject;
 
         // 화면 프리팹에 관리자가 빠져 있어도 런타임 데이터 연결만 자동으로 복구한다.
         host.AddComponent<UIManager>();
@@ -72,6 +77,7 @@ public sealed class UIManager : MonoBehaviour
             return;
 
         if (boundPartyManager != partyManager ||
+            boundAssemblyPartyHUD != assemblyPartyHUD ||
             boundSupportPointManager != partyManager.SupportPointManager ||
             boundChainSkillPromptUI != chainSkillPromptUI ||
             boundEnemy != ResolveBattleEnemy() ||
@@ -101,8 +107,18 @@ public sealed class UIManager : MonoBehaviour
 
     public void RefreshAll()
     {
-        partyStatusUI?.RefreshNow();
+        if (partyStatusUI != null && partyStatusUI.isActiveAndEnabled)
+            partyStatusUI.RefreshNow();
+        if (assemblyPartyHUD != null && assemblyPartyHUD.isActiveAndEnabled)
+            assemblyPartyHUD.RefreshNow();
         combatActionHUD?.RefreshNow();
+    }
+
+    public void UseAssemblyPartyHud(PlayerPartyHudAssemblyPresenter hud)
+    {
+        assemblyPartyHUD = hud;
+        partyStatusUI = null;
+        if (Application.isPlaying && isActiveAndEnabled) TryBind();
     }
 
     private void TryBind()
@@ -118,7 +134,11 @@ public sealed class UIManager : MonoBehaviour
             if (partyManager == null)
                 partyManager = FindFirstObjectByType<PartyManager>();
 
-            if (partyStatusUI == null)
+            if (assemblyPartyHUD == null)
+                assemblyPartyHUD = FindFirstObjectByType<PlayerPartyHudAssemblyPresenter>(
+                    FindObjectsInactive.Include);
+
+            if (partyStatusUI == null && assemblyPartyHUD == null)
                 partyStatusUI = FindFirstObjectByType<PartyStatusUI>(
                     FindObjectsInactive.Include);
 
@@ -144,17 +164,18 @@ public sealed class UIManager : MonoBehaviour
                 chainSkillPromptUI.gameObject.SetActive(true);
         }
 
-        return partyManager != null && partyStatusUI != null;
+        return partyManager != null && (partyStatusUI != null || assemblyPartyHUD != null);
     }
 
     private void BindDataSources()
     {
         UnbindDataSources();
 
-        if (partyManager == null || partyStatusUI == null)
+        if (partyManager == null || (partyStatusUI == null && assemblyPartyHUD == null))
             return;
 
         boundPartyManager = partyManager;
+        boundAssemblyPartyHUD = assemblyPartyHUD;
         boundPartyManager.ActiveCharacterChanged += HandleActiveCharacterChanged;
         boundSupportPointManager = partyManager.SupportPointManager;
         if (boundSupportPointManager != null)
@@ -182,13 +203,14 @@ public sealed class UIManager : MonoBehaviour
             }
         }
 
-        partyStatusUI.Bind(partyManager);
+        partyStatusUI?.Bind(partyManager);
+        assemblyPartyHUD?.Bind(partyManager);
         combatActionHUD?.Bind(partyManager);
         BindBattleViews();
         foreach (PlayerController member in boundMembers)
         {
             if (member != null)
-                partyStatusUI.SetMemberHealth(member, member.CurrentHp, member.CurrentMaxHp);
+                partyStatusUI?.SetMemberHealth(member, member.CurrentHp, member.CurrentMaxHp);
         }
 
         RefreshAll();
@@ -216,6 +238,7 @@ public sealed class UIManager : MonoBehaviour
         }
 
         boundPartyManager = null;
+        boundAssemblyPartyHUD = null;
         boundSupportPointManager = null;
         boundChainSkillPromptUI = null;
         boundEnemy = null;

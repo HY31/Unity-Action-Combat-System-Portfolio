@@ -1,4 +1,5 @@
 *.cs text eol=lf
+*.shader text eol=lf
 *.md text eol=lf
 .gitignore text eol=lf
 .gitattributes text eol=lf

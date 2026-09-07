@@ -167,6 +167,15 @@ public sealed class ChainSkillPromptUI : MonoBehaviour
         PartyStatusUI partyHud = FindFirstObjectByType<PartyStatusUI>();
         Sprite left = partyHud != null ? partyHud.GetPreviousChainPortrait() : null;
         Sprite right = partyHud != null ? partyHud.GetNextChainPortrait() : null;
+        if (left == null || right == null)
+        {
+            var assemblyHud = FindFirstObjectByType<PlayerPartyHudAssemblyPresenter>();
+            if (assemblyHud != null)
+            {
+                if (left == null) left = assemblyHud.GetPreviousChainPortrait();
+                if (right == null) right = assemblyHud.GetNextChainPortrait();
+            }
+        }
         Show(defaultDuration, left, right);
     }
 

@@ -17,13 +17,15 @@ public sealed class AssaultBattleHUD : MonoBehaviour
     [SerializeField] private Text scoreText;
     [SerializeField] private Text damageText;
     [SerializeField] private Image scoreFill;
+    [SerializeField] private Image timerProgressFill;
+    [SerializeField] private Image[] rankIndicators = new Image[3];
 
     [Header("Boss Status")]
     [SerializeField] private Image bossHealthFill;
     [SerializeField] private Image bossStunFill;
     [SerializeField] private Text bossHealthText;
     [SerializeField] private Text bossStunText;
-    [SerializeField] private Color bossHealthColor = new Color32(93, 238, 35, 255);
+    [SerializeField] private Color bossHealthColor = Color.white;
     [SerializeField] private Color bossStunColor = new Color32(255, 205, 24, 255);
     [SerializeField] private Color bossExhaustedStunColor = new Color32(112, 118, 126, 255);
 
@@ -67,12 +69,16 @@ public sealed class AssaultBattleHUD : MonoBehaviour
 
     [Header("Rank Score")]
     [Tooltip("B 등급에 필요한 최소 총점이다.")]
-    [SerializeField, Min(0)] private int bRankScore = 8000;
+    [SerializeField, Min(0)] private int bRankScore = 6000;
     [Tooltip("A 등급에 필요한 최소 총점이다.")]
-    [SerializeField, Min(0)] private int aRankScore = 16000;
+    [SerializeField, Min(0)] private int aRankScore = 14000;
     private ZZZWipeoutLayeredDirector wipeoutPresenter;
     [Tooltip("S 등급에 필요한 최소 총점이다.")]
-    [SerializeField, Min(0)] private int sRankScore = 25000;
+    [SerializeField, Min(0)] private int sRankScore = 20000;
+    [Tooltip("아직 달성하지 못한 등급 원형 표시의 색상이다.")]
+    [SerializeField] private Color rankInactiveColor = new Color32(83, 86, 87, 255);
+    [Tooltip("달성한 등급 원형 표시의 색상이다.")]
+    [SerializeField] private Color rankActiveColor = new Color32(255, 191, 20, 255);
 
     private bool subscribed;
     private bool ownsBattlePause;
@@ -97,6 +103,22 @@ public sealed class AssaultBattleHUD : MonoBehaviour
     {
         ResolveBattleController();
         EnsurePresentationView();
+        RefreshAll();
+    }
+
+    /// <summary>
+    /// 강습전 전용 타이머 진행 바와 B·A·S 등급 표시를 연결한다.
+    /// 기본 HUD 참조와 분리해 기존 프리팹도 안전하게 업그레이드할 수 있다.
+    /// </summary>
+    public void ConfigureAssaultInfoView(
+        Image battleTimerProgressFill,
+        Image[] battleRankIndicators)
+    {
+        timerProgressFill = battleTimerProgressFill;
+        rankIndicators = battleRankIndicators ?? new Image[3];
+        bRankScore = 6000;
+        aRankScore = 14000;
+        sRankScore = 20000;
         RefreshAll();
     }
 
@@ -194,6 +216,8 @@ public sealed class AssaultBattleHUD : MonoBehaviour
         bossStunFill = battleBossStunFill;
         bossHealthText = battleBossHealthText;
         bossStunText = battleBossStunText;
+        // 전용 체력 스프라이트가 이미 초록색 그라데이션을 포함하므로 원색 그대로 출력한다.
+        bossHealthColor = Color.white;
         resultGroup = battleResultGroup;
         resultReasonText = battleResultReasonText;
         resultRankText = battleResultRankText;
@@ -365,10 +389,14 @@ public sealed class AssaultBattleHUD : MonoBehaviour
 
     private void UpdateTimer(float remainingTime)
     {
-        if (timerText == null)
-            return;
+        if (timerText != null)
+            timerText.text = FormatTime(remainingTime, true);
 
-        timerText.text = FormatTime(remainingTime, true);
+        if (timerProgressFill != null && battleController != null)
+        {
+            float duration = Mathf.Max(0.01f, battleController.BattleDuration);
+            timerProgressFill.fillAmount = Mathf.Clamp01(1f - remainingTime / duration);
+        }
     }
 
     private void UpdateScore(int score)
@@ -416,23 +444,63 @@ public sealed class AssaultBattleHUD : MonoBehaviour
     {
         int safeScore = Mathf.Max(0, score);
 
+        int operationScore = battleController != null
+            ? Mathf.Max(0, battleController.OperationScore)
+            : 0;
+        int nextRankScore = GetVisibleRankTarget(safeScore);
+
         if (scoreText != null)
-            scoreText.text = $"{safeScore:00000}";
+        {
+            scoreText.text =
+                $"점수: <color=#FFC51C>{safeScore}</color> " +
+                $"<color=#FFC51C>({operationScore})</color>/{nextRankScore}";
+        }
 
         if (scoreFill != null && battleController != null)
         {
             float maximumScore = Mathf.Max(1, battleController.MaximumTotalScore);
             scoreFill.fillAmount = Mathf.Clamp01(safeScore / maximumScore);
         }
+
+        RefreshRankIndicators(safeScore);
     }
 
     private void RefreshScoreBreakdown()
     {
         if (damageText != null && battleController != null)
         {
-            damageText.text =
-                $"DMG {battleController.DamageScore:00000}  " +
-                $"OP {battleController.OperationScore:0000}";
+            damageText.text = string.Empty;
+        }
+    }
+
+    private int GetVisibleRankTarget(int score)
+    {
+        if (score < bRankScore)
+            return bRankScore;
+        if (score < aRankScore)
+            return aRankScore;
+        return sRankScore;
+    }
+
+    private void RefreshRankIndicators(int score)
+    {
+        if (rankIndicators == null)
+            return;
+
+        int count = Mathf.Min(rankIndicators.Length, 3);
+        for (int i = 0; i < count; i++)
+        {
+            if (rankIndicators[i] != null)
+            {
+                int threshold = i == 0
+                    ? bRankScore
+                    : i == 1
+                        ? aRankScore
+                        : sRankScore;
+                rankIndicators[i].color = score >= threshold
+                    ? rankActiveColor
+                    : rankInactiveColor;
+            }
         }
     }
 
@@ -441,6 +509,12 @@ public sealed class AssaultBattleHUD : MonoBehaviour
         EnemyController boss = battleController != null ? battleController.Boss : null;
         float healthNormalized = boss != null ? boss.CurrentHpNormalized : 0f;
         float stunNormalized = boss != null ? boss.CurrentStunNormalized : 0f;
+        bool isGroggy = boss != null && boss.IsGroggy;
+        bool isChainExhausted = isGroggy && boss.IsChainSkillSequenceComplete;
+        Color groggyRainbow = Color.HSVToRGB(
+            Mathf.Repeat(Time.unscaledTime * 1.6f, 1f),
+            0.8f,
+            1f);
 
         if (bossHealthFill != null)
         {
@@ -451,13 +525,10 @@ public sealed class AssaultBattleHUD : MonoBehaviour
         if (bossStunFill != null)
         {
             bossStunFill.fillAmount = stunNormalized;
-            bool isGroggy = boss != null && boss.IsGroggy;
-            bool isChainExhausted = isGroggy && boss.IsChainSkillSequenceComplete;
-
             bossStunFill.color = isChainExhausted
                 ? bossExhaustedStunColor
                 : isGroggy
-                    ? Color.HSVToRGB(Mathf.Repeat(Time.unscaledTime * 1.6f, 1f), 0.8f, 1f)
+                    ? groggyRainbow
                     : bossStunColor;
         }
 
@@ -471,10 +542,16 @@ public sealed class AssaultBattleHUD : MonoBehaviour
 
         if (bossStunText != null)
         {
-            int percent = Mathf.RoundToInt(stunNormalized * 100f);
-            bossStunText.text = boss != null
-                ? (boss.IsGroggy ? "STUN " : "DAZE ") + percent + "%"
-                : "DAZE --";
+            int percent = Mathf.Clamp(
+                Mathf.RoundToInt(stunNormalized * 100f),
+                0,
+                EnemyController.MaxDisplayedStunPercent);
+            bossStunText.text = boss != null ? percent.ToString("00") : "--";
+            bossStunText.color = isChainExhausted
+                ? bossExhaustedStunColor
+                : isGroggy
+                    ? groggyRainbow
+                    : new Color32(255, 149, 20, 255);
         }
     }
     private void UpdateResult(AssaultBattleEndReason? reason)
@@ -621,9 +698,38 @@ public sealed class AssaultBattleHUD : MonoBehaviour
         if (!CanBuildRuntimeView)
             return;
 
+        ResolveAssaultInfoReferences();
         EnsureWipeoutView();
         EnsureResultExtras();
         RefreshBossPortrait();
+    }
+
+    private void ResolveAssaultInfoReferences()
+    {
+        Transform combatView = transform.Find("CombatView");
+        if (combatView == null)
+            return;
+
+        if (timerProgressFill == null)
+        {
+            timerProgressFill = combatView
+                .Find("TimerPanel/ProgressTrack/ProgressFill")
+                ?.GetComponent<Image>();
+        }
+
+        if (rankIndicators == null || rankIndicators.Length != 3)
+            rankIndicators = new Image[3];
+
+        string[] names = { "RankB", "RankA", "RankS" };
+        for (int i = 0; i < names.Length; i++)
+        {
+            if (rankIndicators[i] == null)
+            {
+                rankIndicators[i] = combatView
+                    .Find($"ScorePanel/RankMedals/{names[i]}")
+                    ?.GetComponent<Image>();
+            }
+        }
     }
 
     private void EnsureWipeoutView()
