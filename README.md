@@ -1,88 +1,93 @@
-# Real-time Action Combat Structure Design
+# 젠레스 존 제로 — 강습전 콘텐츠 모작
 
-Unity로 제작 중인 3인 파티 기반 실시간 액션 전투 시스템의 **소스 코드 포트폴리오**입니다.
+Unity·C#으로 「젠레스 존 제로」의 강습전을 모작한 개인 프로젝트입니다.
+3인 파티의 공격·회피·교대 지원과 보스 전투를 구현하고, 점수 집계와 결과 화면까지 제작했습니다.
 
-캐릭터 상태 전이, 데이터 기반 공격, 충돌 판정, 파티 교대, 패링 지원, 적의 그로기·이상 축적과 전투 UI를 서로 분리된 책임으로 구성하는 데 집중했습니다.
+**[플레이 영상 보기](https://youtu.be/hCSUlPK0bxw)**
 
-> 🎬 플레이 영상: 포트폴리오 영상 완성 후 링크를 추가할 예정입니다.
+| 항목 | 내용 |
+| --- | --- |
+| 개발 형태 | 개인 프로젝트 · 원작 모작 |
+| 개발 기간 | 2026.02 ~ 2026.09 |
+| 개발 환경 | Unity 6000.2.6f2 · C# · URP · Git |
+| 구현 대상 | 제인 도·엘렌 조·코린의 3인 파티, 데드 엔드 부처 보스, 강습전 진행 및 HUD |
+| 저장소 구성 | C#·셰이더 소스 및 설명 문서 |
 
-## 구현 목표
+> **코드 검토용 공개 저장소입니다.** 원작 에셋은 포함하지 않으며, 이 저장소만으로 실행 가능한 Unity 프로젝트는 아닙니다.
 
-- 입력과 행동 규칙을 분리하는 플레이어 FSM
-- 애니메이션 시간에 맞춘 다단 HitBox 판정
-- 정적 공격 설정과 런타임 공격자 정보를 분리한 대미지 전달
-- 캐릭터 데이터 교체만으로 공격·스킬·궁극기 구성을 바꾸는 구조
-- 파티 교대, 패링 지원, 지원 포인트 흐름
-- 적의 체력, 그로기, 속성 이상 축적과 연쇄 스킬 요청
-- 런타임 전투 코드와 UI 표현 코드의 분리
-- 반복적인 캐릭터·HUD 구성을 줄이는 Unity Editor 자동화
+## 핵심 구현
 
-## 핵심 구조
+### 1. 캐릭터 행동을 상태별로 분리
 
-```mermaid
-flowchart LR
-    Input["Player Input"] --> Controller["PlayerController"]
-    Controller --> State["IPlayerState / Current State"]
-    Data["ScriptableObject Combat Data"] --> State
-    State --> HitBox["HitBox + CombatHitData"]
-    HitBox --> HurtBox["HurtBox"]
-    HurtBox --> Player["Player Hit Reaction"]
-    HurtBox --> Enemy["EnemyController"]
-    Enemy --> Groggy["HP / Stun / Anomaly"]
-    Enemy --> Chain["Chain Skill Request"]
-    Controller --> Party["PartyManager"]
-    Party --> Support["Switch / Parry Support"]
-    Controller --> UI["Player & Party UI"]
-    Enemy --> UI
-```
+공격·회피·피격·이동·스킬·궁극기·지원 행동을 `IPlayerState` 기반 상태 객체로 분리했습니다.
+`PlayerController`는 상태 전이와 체력·에너지·데시벨을 관리합니다. 각 상태에서는 입력을 받을 수 있는 시점, 공격 판정 구간, 행동 취소 조건과 종료 시 정리할 내용을 처리합니다.
 
-자세한 책임과 호출 흐름은 [Architecture](Docs/Architecture.md)에서 확인할 수 있습니다.
+- 상태가 바뀔 때 기존 상태의 종료 처리와 다음 상태의 진입 처리를 거치도록 했습니다.
+- 공격·스킬·궁극기 및 캐릭터 능력치는 ScriptableObject 데이터로 관리합니다.
 
-## 주요 코드
+관련 코드: [플레이어 컨트롤러](Assets/Scripts/Controllers/PlayerController.cs) · [행동 상태](Assets/Scripts/Controllers/State/) · [파티 관리](Assets/Scripts/Controllers/PartyManager.cs)
 
-| 영역 | 역할 | 대표 코드 |
-| --- | --- | --- |
-| Player FSM | 이동, 공격, 회피, 스킬, 궁극기, 지원 상태 전이 | `Assets/Scripts/Controllers/State` |
-| Combat | HitBox/HurtBox 충돌과 런타임 피격 데이터 전달 | `Assets/Scripts/Battle` |
-| Combat Data | 공격·스킬·궁극기·캐릭터 설정의 데이터화 | `Assets/Scripts/Battle/Data` |
-| Enemy | 공격 경고, 피격, 그로기, 이상 축적 | `Assets/Scripts/Controllers/Enemy` |
-| Party | 활성 캐릭터 교대와 패링 지원 자원 관리 | `PartyManager.cs`, `SupportPointManager.cs` |
-| Camera | 추적, 충돌 보정, 줌, 화면 흔들림 | `Assets/Scripts/Camera` |
-| UI | 체력·에너지·그로기·이상·연쇄 스킬 표시 | `Assets/Scripts/UI` |
-| Editor Tools | 캐릭터 프리팹·데이터·HUD 구성 자동화 | `Assets/Editor` |
+### 2. 판정과 패턴 선택에 맞춘 자료구조
 
-## 설계 포인트
+**무기 궤적 판정**은 무기 선분의 여러 지점을 샘플링하고, 이전 프레임에서 현재 프레임까지의 이동 경로를 `SphereCastNonAlloc`으로 검사합니다. 빠른 움직임에서 접촉을 놓치지 않도록 현재 무기 위치의 겹침 검사도 함께 수행합니다.
 
-### 1. 상태가 행동을 소유한다
+- `HashSet<Transform>`으로 같은 활성 타격 구간의 중복 적중을 막고, 다음 타격 구간에서 기록을 초기화합니다.
+- 물리 검사 결과 배열과 위치 버퍼를 재사용합니다.
+- 적의 패턴은 거리·쿨다운·직전 패턴 등을 고려해 가중치로 선택합니다.
+- `Dictionary<EnemyAttackData, float>`에 패턴별 재사용 가능 시각을 보관합니다.
 
-`PlayerController`는 현재 상태를 보유하고 입력을 전달합니다. 이동, 공격, 회피, 스킬, 궁극기 로직은 각각의 `IPlayerState` 구현이 담당하므로 한 컨트롤러에 조건문이 집중되지 않습니다.
+관련 코드: [무기 궤적 판정](Assets/Scripts/Battle/WeaponSweepDetector.cs) · [적 전투 제어](Assets/Scripts/Controllers/Enemy/EnemyController.cs) · [공격 데이터](Assets/Scripts/Battle/Data/EnemyAttackData.cs)
 
-### 2. 설정 데이터와 충돌 순간 데이터를 분리한다
+### 3. 반복 작업을 줄이는 전투 제작용 에디터 도구
 
-`HitPayload`는 배율과 판정 속성처럼 재사용 가능한 정적 설정을 보유합니다. 공격이 시작되면 실제 공격자와 결합해 `CombatHitData`가 되고, `HitBox → HurtBox` 흐름을 통해 피격 대상까지 전달됩니다.
+애니메이션을 반복 재생하며 공격 타이밍을 수치로 조정하던 작업을 줄이기 위해 에디터 도구를 제작했습니다.
+애니메이션 프레임을 스크럽하며 워닝·타격·패링/회피·추적·이동 구간을 타임라인에서 비교하고 편집할 수 있습니다.
+후딜 트랙에는 마지막 타격 이후부터 애니메이션이 끝날 때까지의 구간을 표시합니다.
 
-### 3. UI는 전투 규칙을 변경하지 않는다
+- 타이밍 구간 생성·이동·리사이즈와 Undo를 지원합니다.
+- 애니메이션 자세에 맞춰 Scene View에서 Body Box와 무기 궤적을 확인합니다.
+- 무기 판정의 시작점·끝점과 반경을 조정하고, 공격 데이터의 클립·구간·판정 설정을 검증합니다.
+- 편집 도구와 런타임이 동일한 `EnemyAttackData`를 사용합니다.
 
-UI는 `PlayerController`, `PartyManager`, `EnemyController`의 공개 상태를 읽거나 명시적으로 바인딩됩니다. 체력바의 지연 감소처럼 표현에만 필요한 동작은 `AnimatedGaugeUI`가 독립적으로 처리합니다.
+관련 코드: [전투 제작용 에디터](Assets/Editor/CombatAttackAuthoringWindow.cs) · [도구 사용 안내](Docs/CombatEditor.md)
 
-### 4. 반복 작업은 Editor 도구로 자동화한다
+### 4. 강습전 전투 흐름
 
-캐릭터 프리팹과 데이터 팩 생성, 임포트 설정, HUD 프리팹 구성을 Editor 코드로 자동화해 수동 연결 실수를 줄였습니다.
+- **공격 예고와 지원:** 워닝 사인으로 가능한 대응을 표시합니다. 패링 지원이 가능한 공격에 맞춰 교대하더라도, 지원 포인트가 부족하면 회피 지원으로 전환됩니다.
+- **대응과 후속 행동:** 패링 지원으로 적의 공격을 끊고 그로기를 누적하며, 극한 회피 후에는 입력에 따라 일반 공격이나 스킬로 이어갈 수 있습니다.
+- **그로기와 콤보 스킬:** 그로기 시간은 콤보 선택을 기다리는 동안만 정지하고, 선택한 스킬이 실행되는 동안에는 다시 흐릅니다.
+- **전투 종료:** 전투 중 제한 시간과 점수를 갱신하고, 보스 처치 시 와이프아웃 연출 후 결과를 표시합니다.
 
-## 개발 과정
+관련 코드: [지원 포인트](Assets/Scripts/Controllers/SupportPointManager.cs) · [지원 행동](Assets/Scripts/Controllers/State/SupportState.cs) · [콤보 선택](Assets/Scripts/UI/ChainSkillPromptUI.cs) · [강습전 진행](Assets/Scripts/Battle/Assault/AssaultBattleController.cs)
 
-이 저장소에는 기본 이동·공격 구현부터 FSM, 데이터 기반 콤보, 스킬·궁극기, 패링 지원, 파티 교대와 에디터 자동화로 확장한 코드 커밋 기록이 남아 있습니다.
+### 5. 전투 상태와 연동한 HUD
 
-단계별 변화는 [Development History](Docs/DevelopmentHistory.md)에 정리했습니다.
+원작 화면을 참고해 사다리꼴 게이지, 기울어진 숫자, 이상 축적 아이콘, 타이머와 점수판을 제작했습니다. 체력·그로기·속성 이상·데시벨 수치와 전투 진행 상태에 따라 표시를 갱신합니다.
 
-## 저장소 공개 범위
+- 체력은 오른쪽에서 왼쪽으로 감소하며, 빨간 잔상 게이지가 뒤따릅니다.
+- 그로기는 왼쪽에서 오른쪽으로 누적되고, 그로기 및 콤보 가능 상태에 따라 숫자와 게이지의 색이 바뀝니다. 마지막 콤보를 시작해 사용 가능 횟수가 0이 되면 회색으로 전환됩니다.
+- 데시벨은 구간에 따라 회색, 파랑–초록, 초록–노랑, 주황색으로 변화합니다.
+- 상단 보스 HUD와 적 위 상태 표시 외에도 파티 정보, 행동 버튼, 디지털 타이머와 점수판을 구현했습니다.
 
-이 저장소는 코드 검토를 위한 포트폴리오 저장소이며 **독립 실행 가능한 Unity 프로젝트가 아닙니다.**
+관련 코드: [상단 보스 HUD](Assets/Scripts/UI/BossHudV8Presenter.cs) · [적 위 상태 표시](Assets/Scripts/UI/EnemyWorldStatusUI.cs) · [데시벨 표시](Assets/Scripts/UI/DecibelHudText.cs) · [타이머](Assets/Scripts/UI/AssaultTimerV1Presenter.cs) · [점수판](Assets/Scripts/UI/AssaultScoreboardV1Presenter.cs)
 
-- 포함: 직접 작성한 C# 런타임 코드, Editor 도구, 설계 문서
-- 제외: 모델, 애니메이션, 텍스처, 음원, 영상, 프리팹, 씬, ScriptableObject 인스턴스, 외부 플러그인
-- 과거 Git 기록도 동일한 기준으로 정리하여 바이너리 에셋을 포함하지 않습니다.
+## 코드 확인 안내
 
-## Fan Project Notice
+- `Assets/Scripts/`: 전투·파티·카메라·HUD 등 런타임 코드
+- `Assets/Editor/`: 전투 제작 도구와 캐릭터·HUD 구성, 빌드 보조 코드
+- `Assets/Shaders/`: 프로젝트의 렌더링용 텍스트 셰이더 소스
+- [코드 구조](Docs/Architecture.md) · [개발 과정](Docs/DevelopmentHistory.md) · [전투 제작 도구](Docs/CombatEditor.md)
 
-This is an unofficial, non-commercial fan-made combat system study inspired by *Zenless Zone Zero*. This repository does not distribute original game models, animations, textures, audio, video, or other proprietary assets. All rights to the referenced IP belong to their respective owners.
+원본 개발 환경은 Unity 6000.2.6f2입니다. 이 저장소에는 씬·프리팹·데이터 인스턴스·패키지 설정과 원작 에셋이 없으므로, 별도 설정 없이 실행하거나 빌드할 수 없습니다. 제작 도구가 입력으로 사용하는 자료와 생성 결과물도 포함하지 않습니다. 실제 플레이는 상단 영상에서 확인해 주세요.
+
+## 제작 범위와 AI 활용
+
+코드 구현·수정, 자료 탐색과 빌드 점검에 AI 도구를 활용했습니다.
+구현할 전투 규칙과 화면 구성은 직접 정하고, 플레이 테스트에서 원작과 비교하며 수정할 부분을 확인했습니다.
+
+## 원작 및 에셋 안내
+
+이 프로젝트는 「젠레스 존 제로」를 참고한 비공식·비상업적 학습 프로젝트이며 원작의 공식 프로젝트가 아닙니다.
+원작의 캐릭터·이미지·음원 등은 각 권리자에게 권리가 있습니다. 학습 목적으로 사용했다는 표기가 해당 자료의 재배포 권한을 의미하지는 않습니다.
+
+공개 범위는 프로젝트 C# 코드, 텍스트 셰이더 소스와 설명 문서입니다. 모델·애니메이션·이미지·음원·영상·씬·프리팹·머티리얼·데이터 인스턴스는 포함하지 않습니다.
